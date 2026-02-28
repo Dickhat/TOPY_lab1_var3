@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 plotters = "0.3.5"
+eframe = "0.29"
+egui_plot = "0.29"
+rfd = "0.14"
