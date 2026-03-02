@@ -539,18 +539,71 @@ impl eframe::App for OptimizationApp {
                     });
                 }
 
-                // РЕЗУЛЬТАТЫ (Красивая карточка)
+                // РЕЗУЛЬТАТЫ (Акцентная карточка)
                 if let Some(res) = &self.result {
-                    ui.add_space(5.0);
-                    egui::Frame::none()
-                        .fill(ui.visuals().faint_bg_color)
-                        .rounding(5.0)
-                        .inner_margin(10.0)
+                    ui.add_space(10.0);
+
+                    // Определяем основной цвет темы для рамки (например, желтый или оранжевый)
+                    let accent_color = egui::Color32::from_rgb(255, 215, 0); // Золотистый
+
+                    egui::Frame::group(ui.style())
+                        .fill(ui.visuals().window_fill()) // Более плотный фон
+                        .stroke(egui::Stroke::new(2.0, accent_color)) // Толстая акцентная рамка
+                        .rounding(8.0)
+                        .inner_margin(12.0)
                         .show(ui, |ui| {
-                            ui.heading("🏁 Итог");
-                            ui.label(format!("x*: {:.6}", res.x_opt));
-                            ui.label(format!("f(x*): {:.6}", res.f_opt));
-                            ui.label(format!("Шагов: {}", res.history.len()));
+                            ui.vertical_centered(|ui| {
+                                ui.label(
+                                    egui::RichText::new("🏁 ИТОГОВЫЙ ОТВЕТ")
+                                        .strong()
+                                        .color(accent_color)
+                                        .size(16.0),
+                                );
+                            });
+
+                            ui.add_space(5.0);
+                            ui.separator();
+                            ui.add_space(8.0);
+
+                            // Используем сетку для выравнивания значений
+                            egui::Grid::new("result_display_grid")
+                                .num_columns(2)
+                                .spacing([10.0, 10.0])
+                                .show(ui, |ui| {
+                                    ui.label(egui::RichText::new("x* :").size(14.0));
+                                    ui.label(
+                                        egui::RichText::new(format!("{:.6}", res.x_opt))
+                                            .strong()
+                                            .color(egui::Color32::LIGHT_GREEN) // Подсветим значение зеленым
+                                            .size(16.0),
+                                    );
+                                    ui.end_row();
+
+                                    ui.label(egui::RichText::new("f(x*) :").size(14.0));
+                                    ui.label(
+                                        egui::RichText::new(format!("{:.6}", res.f_opt))
+                                            .strong()
+                                            .color(egui::Color32::LIGHT_BLUE) // Подсветим функцию голубым
+                                            .size(16.0),
+                                    );
+                                    ui.end_row();
+                                });
+
+                            ui.add_space(8.0);
+                            ui.separator();
+                            ui.add_space(5.0);
+
+                            ui.horizontal(|ui| {
+                                ui.label("Итераций:");
+                                ui.label(
+                                    egui::RichText::new(res.history.len().to_string()).strong(),
+                                );
+
+                                ui.add_space(10.0);
+
+                                ui.label("Вызовов f:");
+                                ui.label(egui::RichText::new(res.fn_calls.to_string()).strong());
+                            });
                         });
                 }
             });
