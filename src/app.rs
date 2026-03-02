@@ -21,6 +21,7 @@ pub struct OptimizationApp {
     // Результаты
     result: Option<OptimizationResult>,
     error_msg: Option<String>,
+    needs_plot_reset: bool,
 }
 
 impl Default for OptimizationApp {
@@ -34,6 +35,7 @@ impl Default for OptimizationApp {
             selected_method: 0,
             result: None,
             error_msg: None,
+            needs_plot_reset: true,
         }
     }
 }
@@ -165,6 +167,7 @@ impl eframe::App for OptimizationApp {
                         .clicked()
                     {
                         self.run_optimization();
+                        self.needs_plot_reset = true; // Сбрасываем камеру на результат
                     }
 
                     if let Some(err) = &self.error_msg {
@@ -257,36 +260,44 @@ impl eframe::App for OptimizationApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("📈 График функции и интервалы");
 
-            // 1. Рассчитываем расширенные границы для отрисовки
-            // Вычисляем ширину интервала, чтобы сделать отступы пропорциональными
-            let width = (self.b - self.a).abs();
-            // Если ширина 0 (бывает при вводе), берем запас 1.0, иначе 20% от ширины
-            let margin = if width < 1e-5 { 1.0 } else { width * 0.2 };
-
-            let render_start = self.a - margin;
-            let render_end = self.b + margin;
-
             let plot = Plot::new("Optimization Plot")
                 .legend(Legend::default())
-                .show_axes([true, true]);
+                .show_axes([true, true])
+                .data_aspect(1.0)
+                .allow_zoom(true)
+                .allow_drag(true);
 
             plot.show(ui, |plot_ui| {
-                // 2. Генерируем точки функции на РАСШИРЕННОМ интервале
-                let n = 1000; // Количество сегментов для плавности
+                // УСТАНОВКА ГРАНИЦ ТОЛЬКО ПО ТРИГГЕРУ
+                if self.needs_plot_reset {
+                    let width = (self.b - self.a).abs();
+                    let margin = if width < 1e-5 { 1.0 } else { width * 0.5 };
+
+                    plot_ui.set_plot_bounds(egui_plot::PlotBounds::from_min_max(
+                        [(self.a - margin) as f64, -5.0],
+                        [(self.b + margin) as f64, 5.0],
+                    ));
+
+                    // После установки сбрасываем флаг, чтобы не мешать пользователю
+                    self.needs_plot_reset = false;
+                }
+
+                // --- РИСОВАНИЕ ФУНКЦИИ ---
+                // Используем большой span, чтобы при зуме/драге линия не кончалась слишком быстро
+                let span = 50.0;
+                let center_x = ((self.a + self.b) / 2.0) as f64;
+                let n = 2000;
                 let points: PlotPoints = (0..=n)
                     .map(|i| {
-                        let t = i as f64 / n as f64;
-                        let x = render_start as f64 + t * (render_end as f64 - render_start as f64);
+                        let x = (center_x - span) + (i as f64 / n as f64) * (span * 2.0);
                         [x, self.get_f_value(x)]
                     })
                     .collect();
 
-                // Рисуем саму кривую
                 plot_ui.line(
                     Line::new(points)
                         .name("f(x)")
-                        .color(egui::Color32::LIGHT_BLUE)
-                        .width(2.0),
+                        .color(egui::Color32::LIGHT_BLUE),
                 );
 
                 // 3. Рисуем СТАРТОВЫЙ интервал (Синие линии)
