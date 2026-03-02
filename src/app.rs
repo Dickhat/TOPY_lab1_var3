@@ -22,6 +22,7 @@ pub struct OptimizationApp {
     result: Option<OptimizationResult>,
     error_msg: Option<String>,
     needs_plot_reset: bool,
+    selected_iteration: Option<usize>, // Для выделения итерации на графике
 }
 
 impl Default for OptimizationApp {
@@ -36,6 +37,7 @@ impl Default for OptimizationApp {
             result: None,
             error_msg: None,
             needs_plot_reset: true,
+            selected_iteration: None,
         }
     }
 }
@@ -53,6 +55,7 @@ impl OptimizationApp {
     // Запуск расчетов
     fn run_optimization(&mut self) {
         self.error_msg = None;
+        self.selected_iteration = None; // Сбрасываем выделение итерации при новом расчете
 
         // Оборачиваем функцию для подсчета вызовов
         let f_raw = |x: f64| self.get_f_value(x);
@@ -229,22 +232,28 @@ impl eframe::App for OptimizationApp {
                                     ui.vertical_centered(|ui| ui.strong("F(μ)"));
                                     ui.end_row();
 
-                                    for it in &res.history {
-                                        ui.vertical_centered(|ui| ui.label(it.k.to_string()));
-                                        ui.vertical_centered(|ui| ui.label(format!("{:.4}", it.a)));
-                                        ui.vertical_centered(|ui| ui.label(format!("{:.4}", it.b)));
-                                        ui.vertical_centered(|ui| {
-                                            ui.label(format!("{:.4}", it.lambda))
-                                        });
-                                        ui.vertical_centered(|ui| {
-                                            ui.label(format!("{:.4}", it.mu))
-                                        });
-                                        ui.vertical_centered(|ui| {
-                                            ui.label(format!("{:.4}", it.f_lambda))
-                                        });
-                                        ui.vertical_centered(|ui| {
-                                            ui.label(format!("{:.4}", it.f_mu))
-                                        });
+                                    for (i, it) in res.history.iter().enumerate() {
+                                        let is_selected = self.selected_iteration == Some(i);
+
+                                        // Отрисовываем первую колонку (K) как переключатель
+                                        if ui
+                                            .selectable_label(is_selected, it.k.to_string())
+                                            .clicked()
+                                        {
+                                            if is_selected {
+                                                self.selected_iteration = None; // Снять выделение при повторном клике
+                                            } else {
+                                                self.selected_iteration = Some(i);
+                                            }
+                                        }
+
+                                        // Остальные колонки просто отображаем (можно тоже сделать кликабельными при желании)
+                                        ui.label(format!("{:.4}", it.a));
+                                        ui.label(format!("{:.4}", it.b));
+                                        ui.label(format!("{:.4}", it.lambda));
+                                        ui.label(format!("{:.4}", it.mu));
+                                        ui.label(format!("{:.4}", it.f_lambda));
+                                        ui.label(format!("{:.4}", it.f_mu));
                                         ui.end_row();
                                     }
                                 });
@@ -315,29 +324,66 @@ impl eframe::App for OptimizationApp {
                         .style(egui_plot::LineStyle::Solid),
                 );
 
-                // 4. Отрисовка результатов (если расчет произведен)
                 if let Some(res) = &self.result {
-                    if let Some(last_it) = res.history.last() {
-                        // Конечный интервал неопределенности (Красные линии)
-                        plot_ui.vline(
-                            VLine::new(last_it.a as f64)
-                                .color(egui::Color32::RED)
-                                .name("Итог a"),
-                        );
-                        plot_ui.vline(
-                            VLine::new(last_it.b as f64)
-                                .color(egui::Color32::RED)
-                                .name("Итог b"),
+                    // ПРОВЕРЯЕМ: ВЫБРАНА ЛИ КОНКРЕТНАЯ ИТЕРАЦИЯ?
+                    if let Some(idx) = self.selected_iteration {
+                        if let Some(it) = res.history.get(idx) {
+                            // Рисуем границы интервала текущего шага (Оранжевым)
+                            let step_color = egui::Color32::from_rgb(255, 165, 0);
+                            plot_ui.vline(
+                                VLine::new(it.a)
+                                    .color(step_color)
+                                    .name(format!("a_{}", it.k)),
+                            );
+                            plot_ui.vline(
+                                VLine::new(it.b)
+                                    .color(step_color)
+                                    .name(format!("b_{}", it.k)),
+                            );
+
+                            // Рисуем точки lambda и mu этого шага (Штрихованная линия)
+                            plot_ui.vline(
+                                VLine::new(it.lambda)
+                                    .color(step_color.gamma_multiply(0.5))
+                                    .style(egui_plot::LineStyle::Dashed { length: 10.0 })
+                                    .name(format!("λ_{}", it.k)),
+                            );
+
+                            plot_ui.vline(
+                                VLine::new(it.mu)
+                                    .color(step_color.gamma_multiply(0.5))
+                                    .style(egui_plot::LineStyle::Dashed { length: 10.0 })
+                                    .name(format!("μ_{}", it.k)),
+                            );
+
+                            // Ставим точки на графике для визуализации значений функций в λ и μ
+                            plot_ui.points(
+                                Points::new(vec![[it.lambda, it.f_lambda], [it.mu, it.f_mu]])
+                                    .color(step_color)
+                                    .radius(4.0),
+                            );
+                        }
+                    } else {
+                        // ЕСЛИ НИЧЕГО НЕ ВЫБРАНО - РИСУЕМ ФИНАЛЬНЫЙ РЕЗУЛЬТАТ (как было)
+                        if let Some(last_it) = res.history.last() {
+                            plot_ui.vline(
+                                VLine::new(last_it.a)
+                                    .color(egui::Color32::RED)
+                                    .name("Итог a"),
+                            );
+                            plot_ui.vline(
+                                VLine::new(last_it.b)
+                                    .color(egui::Color32::RED)
+                                    .name("Итог b"),
+                            );
+                        }
+                        plot_ui.points(
+                            Points::new(vec![[res.x_opt, res.f_opt]])
+                                .color(egui::Color32::YELLOW)
+                                .radius(6.0)
+                                .name("Экстремум"),
                         );
                     }
-
-                    // Точка найденного экстремума (Желтый круг)
-                    plot_ui.points(
-                        Points::new(vec![[res.x_opt as f64, res.f_opt as f64]])
-                            .color(egui::Color32::YELLOW)
-                            .radius(6.0)
-                            .name("Экстремум"),
-                    );
                 }
             });
         });
