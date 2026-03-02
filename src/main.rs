@@ -5,7 +5,7 @@ fn dichotomy_method<F>(mut a: f32, mut b: f32, eps: f32, l: f32, function: F, ex
 where 
     F: Fn(f32) -> f32
 {
-    if eps <= 0.0 || l <= 0.0
+    if eps <= 0.0 || l <= 0.0 || 2.0 * eps >= l
     {
         return Err("Eps или l не корректно заданы".to_string());
     }
@@ -43,7 +43,7 @@ fn golden_ratio_method<F>(mut a: f32, mut b: f32, eps: f32, l: f32, function: F,
 where
     F: Fn(f32) -> f32
 {
-    if eps <= 0.0 || l <= 0.0
+    if eps <= 0.0 || l <= 0.0 || 2.0 * eps >= l
     {
         return Err("Eps или l не корректно заданы".to_string());
     }
@@ -98,39 +98,71 @@ where
     Ok((a, b))
 }
 
+// Фибоначи последовательность
+fn f(val: i32) -> i32 
+{
+    if val == 0 || val == 1 {return 1;}
+
+    return f(val - 1) + f(val - 2);
+}
+
 fn fibonachi_method<F>(mut a: f32, mut b: f32, eps: f32, l: f32, function: F, extremum_max: bool) -> Result<(f32, f32), String>
 where
     F: Fn(f32) -> f32
 {
-    if eps <= 0.0 || l <= 0.0
+    if eps <= 0.0 || l <= 0.0 || 2.0 * eps >= l
     {
         return Err("Eps или l не корректно заданы".to_string());
     }
 
-    let mut k = 1; /* Итераций */
-    let mut lamda: f32;
-    let mut mu: f32;
+    let mut n: i32 = 1;
+    while (f(n) as f32) < ((b - a) / l) 
+    {
+        n  += 1;
+    }
+
+    let mut lambda = a + (f(n - 2) as f32 / f(n) as f32) * (b - a);
+    let mut mu = a + (f(n - 1) as f32 / f(n) as f32) * (b - a);
+
+    let mut f_lambda = function(lambda);
+    let mut f_mu = function(mu);
 
     println!("{:<3} | {:>8} | {:>8} | {:>8} | {:>8} | {:>10} | {:>10}", 
-                "K",  "a_k",  "b_k", "lamda", "mu", "F(lamda)", "F(mu)");
+             "K", "a", "b", "λ", "μ", "F(λ)", "F(μ)");
 
-    while b - a > l
-    {
-        lamda = (a + b) / 2.0 - eps;
-        mu = (a + b) / 2.0 + eps;
+    // Основной цикл до n-2 шага
+    for k in 1..=(n - 2) {
+        println!("{:<3} | {:>8.4} | {:>8.4} | {:>8.4} | {:>8.4} | {:>10.4} | {:>10.4}", 
+                 k, a, b, lambda, mu, f_lambda, f_mu);
 
-        if extremum_max {
-            if function(lamda) < function(mu) { a = lamda; } 
-            else { b = mu; }
-        } 
-        else
-        {
-            if function(lamda) > function(mu) { a = lamda; } 
-            else { b = mu; }
+        // Условие выбора интервала MAX/MIN
+        let condition = if extremum_max { f_lambda < f_mu } else { f_lambda > f_mu };
+
+        if condition {
+            a = lambda;
+            lambda = mu;
+            f_lambda = f_mu;
+            mu = a + (f(n - k - 1) as f32 / f(n - k) as f32) * (b - a);
+            f_mu = function(mu);
+        } else {
+            b = mu;
+            mu = lambda;
+            f_mu = f_lambda;
+            lambda = a + (f(n - k - 2) as f32 / f(n - k) as f32) * (b - a);
+            f_lambda = function(lambda);
         }
+    }
 
-        println!("{:<3} | {:>8.4} | {:>8.4} | {:>8.4} | {:>8.4} | {:>10.4} | {:>10.4}", k, a, b, lamda, mu, function(lamda), function(mu));
-        k += 1;
+    // Шаг n-1
+    let lambda_n = mu;
+    let mu_n = lambda_n + eps;
+    
+    if extremum_max {
+        if function(lambda_n) < function(mu_n) { a = lambda_n; } 
+        else { b = mu_n; }
+    } else {
+        if function(lambda_n) > function(mu_n) { a = lambda_n; } 
+        else { b = mu_n; }
     }
 
     Ok((a, b))
@@ -278,7 +310,7 @@ fn main() {
 
     let (a, b, eps, mu) = input_data_catch();
 
-    match golden_ratio_method(a, b, eps, mu, f1_max, true) {
+    match fibonachi_method(a, b, eps, mu, f1_max, true) {
         Ok((res_a, res_b)) => {
             println!("Отрезок [{:?}, {:?}]", res_a, res_b);
             if let Err(e) = draw_result_plot_fn1(a, b, res_a, res_b) {
@@ -288,7 +320,7 @@ fn main() {
         Err(error) => println!("Ошибка: {:?}", error)
     };
 
-    match golden_ratio_method(a, b, eps, mu, f2_min, false) {
+    match fibonachi_method(a, b, eps, mu, f2_min, false) {
         Ok((res_a, res_b)) => {
             println!("Отрезок [{:?}, {:?}]", res_a, res_b);
             if let Err(e) = draw_result_plot_fn2(a, b, res_a, res_b) {
