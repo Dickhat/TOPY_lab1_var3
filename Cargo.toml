@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-plotters = "0.3.5"
+plotters = { version = "0.3.5", features = ["bitmap_backend", "image"] }
 eframe = "0.29"
 egui_plot = "0.29"
 rfd = "0.14"
+image = "0.24" 
+docx-rs = "0.4.19"

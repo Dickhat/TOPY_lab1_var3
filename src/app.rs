@@ -1,5 +1,8 @@
+use docx_rs::*;
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints, Points, VLine};
+use image::ImageEncoder;
+use plotters::style::full_palette::ORANGE;
 use std::cell::Cell;
 use std::fs::File;
 use std::io::Write;
@@ -88,6 +91,226 @@ impl OptimizationApp {
         match res {
             Ok(data) => self.result = Some(data),
             Err(e) => self.error_msg = Some(e),
+        }
+    }
+
+    // Вспомогательная функция для создания PNG-байтов графика
+    fn generate_plot_png(&self) -> Vec<u8> {
+        use plotters::prelude::*;
+
+        let mut buffer = vec![0; 800 * 600 * 3]; // Буфер для картинки 800x600
+        let res = self.result.as_ref().unwrap();
+
+        {
+            let root = BitMapBackend::with_buffer(&mut buffer, (800, 600)).into_drawing_area();
+            root.fill(&WHITE).unwrap();
+
+            // Определяем границы (те же 20% отступа)
+            let width = (self.b - self.a).abs();
+            let margin = if width < 1e-5 { 1.0 } else { width * 0.2 };
+            let x_range = (self.a - margin)..(self.b + margin);
+
+            // Находим min/max по Y для красоты
+            let y_min = -5.0; // Можно сделать расчет динамическим
+            let y_max = 5.0;
+
+            let mut chart = ChartBuilder::on(&root)
+                .margin(20)
+                .x_label_area_size(30)
+                .y_label_area_size(30)
+                .build_cartesian_2d(x_range, y_min..y_max)
+                .unwrap();
+
+            chart.configure_mesh().draw().unwrap();
+
+            // 1. Рисуем кривую функции (голубая)
+            chart
+                .draw_series(LineSeries::new(
+                    (0..100).map(|x| {
+                        let curr_x =
+                            (self.a - margin) + (x as f64 / 100.0) * (width + 2.0 * margin);
+                        (curr_x, self.get_f_value(curr_x))
+                    }),
+                    &BLUE.mix(0.5),
+                ))
+                .unwrap();
+
+            // 2. Рисуем стартовые границы (синие)
+            chart
+                .draw_series(std::iter::once(PathElement::new(
+                    vec![(self.a, y_min), (self.a, y_max)],
+                    &BLUE,
+                )))
+                .unwrap();
+            chart
+                .draw_series(std::iter::once(PathElement::new(
+                    vec![(self.b, y_min), (self.b, y_max)],
+                    &BLUE,
+                )))
+                .unwrap();
+
+            // 3. Рисуем точки всех итераций (тусклые)
+            for it in &res.history {
+                chart
+                    .draw_series(std::iter::once(Circle::new(
+                        (it.lambda, it.f_lambda),
+                        2,
+                        &ORANGE.mix(0.3),
+                    )))
+                    .unwrap();
+                chart
+                    .draw_series(std::iter::once(Circle::new(
+                        (it.mu, it.f_mu),
+                        2,
+                        &ORANGE.mix(0.3),
+                    )))
+                    .unwrap();
+            }
+
+            // 4. ФИНАЛЬНАЯ ТОЧКА (Ярко-красная и большая)
+            chart
+                .draw_series(std::iter::once(Circle::new(
+                    (res.x_opt, res.f_opt),
+                    7,
+                    RED.filled(),
+                )))
+                .unwrap();
+
+            chart
+                .draw_series(std::iter::once(Text::new(
+                    format!("x*: {:.3}", res.x_opt),
+                    (res.x_opt, res.f_opt + 0.3),
+                    ("sans-serif", 15).into_font().color(&RED),
+                )))
+                .unwrap();
+
+            root.present().unwrap();
+        }
+
+        // Кодируем сырые пиксели в формат PNG
+        let mut png_buffer = Vec::new();
+        let img_buffer = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(800, 600, buffer)
+            .expect("Failed to create ImageBuffer");
+        let encoder = image::codecs::png::PngEncoder::new(&mut png_buffer);
+        encoder
+            .write_image(
+                img_buffer.as_raw(),
+                800,
+                600,
+                image::ColorType::Rgb8,
+            )
+            .unwrap();
+
+        png_buffer
+    }
+
+    fn save_docx_report(&self) {
+        if let Some(res) = &self.result {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Word Document", &["docx"][..])
+                .set_file_name("optimization_report.docx")
+                .save_file()
+            {
+                // 1. Создаем документ
+                let mut doc = Docx::new();
+
+                // 2. Добавляем заголовок
+                doc = doc.add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_text("Отчет по оптимизации").size(32).bold())
+                        .align(AlignmentType::Center),
+                );
+
+                // --- ДОБАВЛЕНИЕ ГРАФИКА ---
+                let png_bytes = self.generate_plot_png();
+                let pic = Pic::new(&png_bytes); // Создаем объект картинки для docx
+
+                doc = doc.add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_image(pic)) // Вставляем картинку в новый абзац
+                        .align(AlignmentType::Center),
+                );
+
+                // 3. Общая информация
+                let method_name = match self.selected_method {
+                    0 => "Дихотомия",
+                    1 => "Золотое сечение",
+                    _ => "Фибоначчи",
+                };
+
+                doc = doc.add_paragraph(
+                    Paragraph::new()
+                        .add_run(Run::new().add_text(format!("Метод: {}", method_name))),
+                );
+                doc = doc.add_paragraph(Paragraph::new().add_run(Run::new().add_text(format!(
+                    "Результат: x* = {:.6}, f(x*) = {:.6}",
+                    res.x_opt, res.f_opt
+                ))));
+                doc = doc.add_paragraph(Paragraph::new().add_run(
+                    Run::new().add_text(format!("Количество вычислений: {}", res.fn_calls)),
+                ));
+
+                // 4. Создаем ТАБЛИЦУ
+                let mut table = Table::new(vec![]);
+
+                // Шапка таблицы
+                let header_row = TableRow::new(vec![
+                    TableCell::new()
+                        .add_paragraph(Paragraph::new().add_run(Run::new().add_text("K").bold())),
+                    TableCell::new()
+                        .add_paragraph(Paragraph::new().add_run(Run::new().add_text("a_k").bold())),
+                    TableCell::new()
+                        .add_paragraph(Paragraph::new().add_run(Run::new().add_text("b_k").bold())),
+                    TableCell::new()
+                        .add_paragraph(Paragraph::new().add_run(Run::new().add_text("λ").bold())),
+                    TableCell::new()
+                        .add_paragraph(Paragraph::new().add_run(Run::new().add_text("μ").bold())),
+                    TableCell::new().add_paragraph(
+                        Paragraph::new().add_run(Run::new().add_text("F(λ)").bold()),
+                    ),
+                    TableCell::new().add_paragraph(
+                        Paragraph::new().add_run(Run::new().add_text("F(μ)").bold()),
+                    ),
+                ]);
+                table = table.add_row(header_row);
+
+                // Наполняем данными из истории
+                for it in &res.history {
+                    let row = TableRow::new(vec![
+                        TableCell::new().add_paragraph(
+                            Paragraph::new().add_run(Run::new().add_text(it.k.to_string())),
+                        ),
+                        TableCell::new().add_paragraph(
+                            Paragraph::new().add_run(Run::new().add_text(format!("{:.4}", it.a))),
+                        ),
+                        TableCell::new().add_paragraph(
+                            Paragraph::new().add_run(Run::new().add_text(format!("{:.4}", it.b))),
+                        ),
+                        TableCell::new().add_paragraph(
+                            Paragraph::new()
+                                .add_run(Run::new().add_text(format!("{:.4}", it.lambda))),
+                        ),
+                        TableCell::new().add_paragraph(
+                            Paragraph::new().add_run(Run::new().add_text(format!("{:.4}", it.mu))),
+                        ),
+                        TableCell::new().add_paragraph(
+                            Paragraph::new()
+                                .add_run(Run::new().add_text(format!("{:.4}", it.f_lambda))),
+                        ),
+                        TableCell::new().add_paragraph(
+                            Paragraph::new()
+                                .add_run(Run::new().add_text(format!("{:.4}", it.f_mu))),
+                        ),
+                    ]);
+                    table = table.add_row(row);
+                }
+
+                doc = doc.add_table(table);
+
+                // 5. Сохраняем файл
+                let file = File::create(path).unwrap();
+                doc.build().pack(file).expect("Не удалось создать DOCX");
+            }
         }
     }
 
@@ -200,6 +423,11 @@ impl eframe::App for OptimizationApp {
                     {
                         self.run_optimization();
                         self.needs_plot_reset = true; // Сбрасываем камеру на результат
+
+                        if let Some(res) = &self.result {
+                            self.current_step = res.history.len(); // Сразу показываем все шаги
+                            self.is_animating = false; // Останавливаем анимацию, если она шла
+                        }
                     }
 
                     ui.add_space(10.0);
@@ -259,15 +487,14 @@ impl eframe::App for OptimizationApp {
 
                     if self.result.is_some() {
                         ui.add_space(10.0);
-                        if ui
-                            .add(
-                                egui::Button::new("💾 Сохранить отчет в .txt")
-                                    .min_size(egui::vec2(240.0, 30.0)),
-                            )
-                            .clicked()
-                        {
-                            self.save_report();
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("💾 .TXT").clicked() {
+                                self.save_report();
+                            }
+                            if ui.button("📝 .DOCX").clicked() {
+                                self.save_docx_report();
+                            }
+                        });
                     }
 
                     if let Some(res) = &self.result {
@@ -311,7 +538,9 @@ impl eframe::App for OptimizationApp {
                                     ui.vertical_centered(|ui| ui.strong("F(μ)"));
                                     ui.end_row();
 
-                                    for (i, it) in res.history.iter().take(self.current_step).enumerate() {
+                                    for (i, it) in
+                                        res.history.iter().take(self.current_step).enumerate()
+                                    {
                                         let is_selected = self.selected_iteration == Some(i);
 
                                         // Отрисовываем первую колонку (K) как переключатель
