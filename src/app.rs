@@ -193,12 +193,7 @@ impl OptimizationApp {
             .expect("Failed to create ImageBuffer");
         let encoder = image::codecs::png::PngEncoder::new(&mut png_buffer);
         encoder
-            .write_image(
-                img_buffer.as_raw(),
-                800,
-                600,
-                image::ColorType::Rgb8,
-            )
+            .write_image(img_buffer.as_raw(), 800, 600, image::ColorType::Rgb8)
             .unwrap();
 
         png_buffer
@@ -360,6 +355,8 @@ impl OptimizationApp {
 }
 impl eframe::App for OptimizationApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.set_pixels_per_point(1.1);
+
         // ЛОГИКА АНИМАЦИИ
         if self.is_animating {
             if let Some(res) = &self.result {
@@ -381,131 +378,170 @@ impl eframe::App for OptimizationApp {
 
         // 1. ЛЕВАЯ ПАНЕЛЬ (Фиксированная ширина)
         egui::SidePanel::left("controls")
-            .resizable(false) // Запрещаем менять размер, чтобы оставался одного размера
-            .exact_width(260.0)
+            .resizable(false)
+            .exact_width(280.0) // Немного расширим для удобства
             .show(ctx, |ui| {
-                ui.vertical(|ui| {
-                    ui.heading("⚙ Настройки");
-                    ui.separator();
+                // Добавим внутренние отступы всей панели
+                ui.spacing_mut().item_spacing.y = 10.0;
+                ui.add_space(10.0);
 
-                    ui.label("Выбор функции:");
+                ui.vertical_centered(|ui| {
+                    ui.heading("📊 Оптимизация");
+                });
+                ui.separator();
+
+                // БЛОК 1: ВЫБОР ФУНКЦИИ
+                ui.group(|ui| {
+                    ui.label(egui::RichText::new("🎯 Функция").strong());
                     ui.radio_value(&mut self.selected_func, 0, "F1: 3x - x³ (Max)");
                     ui.radio_value(&mut self.selected_func, 1, "F2: (9-x²)/(x²+2x+3) (Min)");
+                });
 
-                    ui.add_space(10.0);
-                    ui.label("Метод оптимизации:");
-                    ui.radio_value(&mut self.selected_method, 0, "Дихотомия");
-                    ui.radio_value(&mut self.selected_method, 1, "Золотое сечение");
-                    ui.radio_value(&mut self.selected_method, 2, "Фибоначчи");
-
-                    ui.add_space(10.0);
-                    ui.label("Интервал поиска [a, b]:");
-                    ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut self.a).speed(0.1));
-                        ui.add(egui::DragValue::new(&mut self.b).speed(0.1));
-                    });
-
-                    ui.add_space(5.0);
-                    ui.label("Параметры ε и l:");
-                    egui::Grid::new("params_grid").show(ui, |ui| {
-                        ui.label("ε:");
-                        ui.add(egui::DragValue::new(&mut self.eps).speed(0.001));
-                        ui.end_row();
-                        ui.label("l:");
-                        ui.add(egui::DragValue::new(&mut self.l).speed(0.001));
-                        ui.end_row();
-                    });
-
-                    ui.add_space(20.0);
-                    if ui
-                        .add(egui::Button::new("🚀 РАССЧИТАТЬ").min_size(egui::vec2(240.0, 40.0)))
-                        .clicked()
-                    {
-                        self.run_optimization();
-                        self.needs_plot_reset = true; // Сбрасываем камеру на результат
-
-                        if let Some(res) = &self.result {
-                            self.current_step = res.history.len(); // Сразу показываем все шаги
-                            self.is_animating = false; // Останавливаем анимацию, если она шла
-                        }
-                    }
-
-                    ui.add_space(10.0);
-                    ui.group(|ui| {
-                        ui.label("🎬 Анимация");
-                        ui.add(
-                            egui::Slider::new(&mut self.animation_speed, 0.1..=2.0).text("сек/шаг"),
-                        );
-
-                        ui.horizontal(|ui| {
-                            if ui.button("▶ Старт").clicked() {
-                                if self.result.is_none() {
-                                    self.run_optimization();
-                                }
-                                self.current_step = 0;
-                                self.is_animating = true;
-                                self.last_step_time = ctx.input(|i| i.time);
-                            }
-
-                            if ui.button("⏸ Стоп").clicked() {
-                                self.is_animating = false;
-                            }
-
-                            if ui.button("🔄 Сброс").clicked() {
-                                self.is_animating = false;
-                                self.current_step = 0;
-                                self.selected_iteration = None;
-                            }
+                // БЛОК 2: МЕТОД
+                ui.group(|ui| {
+                    ui.label(egui::RichText::new("🛠 Метод").strong());
+                    egui::ComboBox::from_label("")
+                        .selected_text(match self.selected_method {
+                            0 => "Дихотомия",
+                            1 => "Золотое сечение",
+                            _ => "Фибоначчи",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.selected_method, 0, "Дихотомия");
+                            ui.selectable_value(&mut self.selected_method, 1, "Золотое сечение");
+                            ui.selectable_value(&mut self.selected_method, 2, "Фибоначчи");
                         });
+                });
 
-                        if let Some(res) = &self.result {
-                            // Слайдер ручного прокручивания шагов
+                // БЛОК 3: ПАРАМЕТРЫ (Сетка для красоты)
+                ui.group(|ui| {
+                    ui.label(egui::RichText::new("📝 Параметры").strong());
+                    egui::Grid::new("inputs_grid")
+                        .num_columns(2)
+                        .spacing([10.0, 8.0])
+                        .show(ui, |ui| {
+                            ui.label("Начало a:");
                             if ui
-                                .add(
-                                    egui::Slider::new(
-                                        &mut self.current_step,
-                                        0..=res.history.len(),
-                                    )
-                                    .text("Шаг"),
-                                )
+                                .add(egui::DragValue::new(&mut self.a).speed(0.1))
                                 .changed()
                             {
-                                self.is_animating = false;
-                                if self.current_step > 0 {
-                                    self.selected_iteration = Some(self.current_step - 1);
-                                } else {
-                                    self.selected_iteration = None;
-                                }
+                                self.needs_plot_reset = true;
                             }
+                            ui.end_row();
+
+                            ui.label("Конец b:");
+                            if ui
+                                .add(egui::DragValue::new(&mut self.b).speed(0.1))
+                                .changed()
+                            {
+                                self.needs_plot_reset = true;
+                            }
+                            ui.end_row();
+
+                            ui.label("Точность ε:");
+                            ui.add(egui::DragValue::new(&mut self.eps).speed(0.001));
+                            ui.end_row();
+
+                            ui.label("Длина l:");
+                            ui.add(egui::DragValue::new(&mut self.l).speed(0.001));
+                            ui.end_row();
+                        });
+                });
+
+                // КНОПКА РАССЧИТАТЬ (Уменьшенная и аккуратная)
+                ui.vertical_centered(|ui| {
+                    let btn = egui::Button::new(egui::RichText::new("🚀 Рассчитать").size(16.0))
+                        .min_size(egui::vec2(160.0, 32.0));
+
+                    if ui.add(btn).clicked() {
+                        self.run_optimization();
+                        self.needs_plot_reset = true;
+                        if let Some(res) = &self.result {
+                            self.current_step = res.history.len();
+                            self.is_animating = false;
+                        }
+                    }
+                });
+
+                // БЛОК 4: АНИМАЦИЯ
+                ui.group(|ui| {
+                    ui.label(egui::RichText::new("🎬 Анимация").strong());
+
+                    // Настройка скорости
+                    ui.add(egui::Slider::new(&mut self.animation_speed, 0.1..=2.0).text("сек/шаг"));
+
+                    // Кнопки управления
+                    ui.horizontal(|ui| {
+                        if ui.button("▶ Старт").clicked() {
+                            if self.result.is_none() {
+                                self.run_optimization();
+                            }
+                            self.current_step = 0;
+                            self.is_animating = true;
+                            self.last_step_time = ctx.input(|i| i.time);
+                        }
+                        if ui.button("⏸ Стоп").clicked() {
+                            self.is_animating = false;
+                        }
+                        if ui.button("🔄 Сброс").clicked() {
+                            self.is_animating = false;
+                            self.current_step = 0;
+                            self.selected_iteration = None;
                         }
                     });
 
-                    if let Some(err) = &self.error_msg {
-                        ui.add_space(10.0);
-                        ui.colored_label(egui::Color32::RED, err);
-                    }
-
-                    if self.result.is_some() {
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            if ui.button("💾 .TXT").clicked() {
-                                self.save_report();
-                            }
-                            if ui.button("📝 .DOCX").clicked() {
-                                self.save_docx_report();
-                            }
-                        });
-                    }
-
+                    // Твой возвращенный код слайдера шагов
                     if let Some(res) = &self.result {
-                        ui.add_space(20.0);
+                        ui.add_space(5.0);
                         ui.separator();
-                        ui.heading("🏁 Результат:");
-                        ui.label(format!("x* = {:.6}", res.x_opt));
-                        ui.label(format!("f(x*) = {:.6}", res.f_opt));
-                        ui.label(format!("Вызовов f: {}", res.fn_calls));
+                        ui.add_space(5.0);
+
+                        // Слайдер ручного прокручивания шагов
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut self.current_step, 0..=res.history.len())
+                                    .text("Тек. шаг"),
+                            )
+                            .changed()
+                        {
+                            self.is_animating = false; // При ручном сдвиге выключаем авто-анимацию
+                            if self.current_step > 0 {
+                                self.selected_iteration = Some(self.current_step - 1);
+                            } else {
+                                self.selected_iteration = None;
+                            }
+                        }
                     }
                 });
+
+                // ЭКСПОРТ
+                if self.result.is_some() {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.label("Экспорт:");
+                        if ui.button("📄 TXT").clicked() {
+                            self.save_report();
+                        }
+                        if ui.button("📝 DOCX").clicked() {
+                            self.save_docx_report();
+                        }
+                    });
+                }
+
+                // РЕЗУЛЬТАТЫ (Красивая карточка)
+                if let Some(res) = &self.result {
+                    ui.add_space(5.0);
+                    egui::Frame::none()
+                        .fill(ui.visuals().faint_bg_color)
+                        .rounding(5.0)
+                        .inner_margin(10.0)
+                        .show(ui, |ui| {
+                            ui.heading("🏁 Итог");
+                            ui.label(format!("x*: {:.6}", res.x_opt));
+                            ui.label(format!("f(x*): {:.6}", res.f_opt));
+                            ui.label(format!("Шагов: {}", res.history.len()));
+                        });
+                }
             });
 
         // 2. НИЖНЯЯ ПАНЕЛЬ (Фиксированная высота для таблицы)
