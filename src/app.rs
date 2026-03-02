@@ -23,6 +23,12 @@ pub struct OptimizationApp {
     error_msg: Option<String>,
     needs_plot_reset: bool,
     selected_iteration: Option<usize>, // Для выделения итерации на графике
+
+    // Поля для анимации
+    is_animating: bool,
+    current_step: usize,  // Сколько шагов сейчас отображать
+    last_step_time: f64,  // Время последнего переключения шага
+    animation_speed: f32, // Секунд на один шаг
 }
 
 impl Default for OptimizationApp {
@@ -38,6 +44,10 @@ impl Default for OptimizationApp {
             error_msg: None,
             needs_plot_reset: true,
             selected_iteration: None,
+            animation_speed: 0.5, // По умолчанию полсекунды на шаг
+            is_animating: false,
+            current_step: 0,
+            last_step_time: 0.0,
         }
     }
 }
@@ -127,6 +137,25 @@ impl OptimizationApp {
 }
 impl eframe::App for OptimizationApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // ЛОГИКА АНИМАЦИИ
+        if self.is_animating {
+            if let Some(res) = &self.result {
+                let s_elapsed = ctx.input(|i| i.time) - self.last_step_time;
+
+                if s_elapsed >= self.animation_speed as f64 {
+                    if self.current_step < res.history.len() {
+                        self.current_step += 1;
+                        self.last_step_time = ctx.input(|i| i.time);
+                        self.selected_iteration = Some(self.current_step - 1);
+                    } else {
+                        self.is_animating = false; // Закончили
+                    }
+                }
+                // Запрашиваем перерисовку на следующем кадре
+                ctx.request_repaint();
+            }
+        }
+
         // 1. ЛЕВАЯ ПАНЕЛЬ (Фиксированная ширина)
         egui::SidePanel::left("controls")
             .resizable(false) // Запрещаем менять размер, чтобы оставался одного размера
@@ -172,6 +201,56 @@ impl eframe::App for OptimizationApp {
                         self.run_optimization();
                         self.needs_plot_reset = true; // Сбрасываем камеру на результат
                     }
+
+                    ui.add_space(10.0);
+                    ui.group(|ui| {
+                        ui.label("🎬 Анимация");
+                        ui.add(
+                            egui::Slider::new(&mut self.animation_speed, 0.1..=2.0).text("сек/шаг"),
+                        );
+
+                        ui.horizontal(|ui| {
+                            if ui.button("▶ Старт").clicked() {
+                                if self.result.is_none() {
+                                    self.run_optimization();
+                                }
+                                self.current_step = 0;
+                                self.is_animating = true;
+                                self.last_step_time = ctx.input(|i| i.time);
+                            }
+
+                            if ui.button("⏸ Стоп").clicked() {
+                                self.is_animating = false;
+                            }
+
+                            if ui.button("🔄 Сброс").clicked() {
+                                self.is_animating = false;
+                                self.current_step = 0;
+                                self.selected_iteration = None;
+                            }
+                        });
+
+                        if let Some(res) = &self.result {
+                            // Слайдер ручного прокручивания шагов
+                            if ui
+                                .add(
+                                    egui::Slider::new(
+                                        &mut self.current_step,
+                                        0..=res.history.len(),
+                                    )
+                                    .text("Шаг"),
+                                )
+                                .changed()
+                            {
+                                self.is_animating = false;
+                                if self.current_step > 0 {
+                                    self.selected_iteration = Some(self.current_step - 1);
+                                } else {
+                                    self.selected_iteration = None;
+                                }
+                            }
+                        }
+                    });
 
                     if let Some(err) = &self.error_msg {
                         ui.add_space(10.0);
@@ -232,7 +311,7 @@ impl eframe::App for OptimizationApp {
                                     ui.vertical_centered(|ui| ui.strong("F(μ)"));
                                     ui.end_row();
 
-                                    for (i, it) in res.history.iter().enumerate() {
+                                    for (i, it) in res.history.iter().take(self.current_step).enumerate() {
                                         let is_selected = self.selected_iteration == Some(i);
 
                                         // Отрисовываем первую колонку (K) как переключатель
