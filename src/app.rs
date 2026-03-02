@@ -41,6 +41,7 @@ pub struct OptimizationApp {
     export_end_step: usize,
     show_export_dialog: bool,
     export_include_table: bool, // Интервал для экспорта шагов в отчет
+    export_mode: usize, // (0 - финал, 1 - шаги)
 }
 
 impl Default for OptimizationApp {
@@ -66,6 +67,7 @@ impl Default for OptimizationApp {
             export_end_step: 1,
             show_export_dialog: false,
             export_include_table: true,
+            export_mode: 0,
         }
     }
 }
@@ -243,7 +245,7 @@ impl OptimizationApp {
     fn save_docx_report(&self) {
         if let Some(res) = &self.result {
             if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Word Document", &["docx"])
+                .add_filter("Word Document", &["docx"][..])
                 .set_file_name("optimization_report.docx")
                 .save_file()
             {
@@ -268,7 +270,7 @@ impl OptimizationApp {
                 );
 
                 // --- ГРАФИКИ (Пункт 5 задания) ---
-                if self.export_step_interval == 0 {
+                if self.export_mode == 0 {
                     let png_bytes = self.generate_plot_png(None);
                     doc = doc.add_paragraph(
                         Paragraph::new()
@@ -606,6 +608,7 @@ impl eframe::App for OptimizationApp {
                         if ui.button("📝 .DOCX").clicked() {
                             self.show_export_dialog = true; // Вместо прямого вызова функции
                             if let Some(res) = &self.result {
+                                self.export_start_step = 1;
                                 self.export_end_step = res.history.len(); // Устанавливаем макс. значение
                             }
                         }
@@ -872,58 +875,67 @@ impl eframe::App for OptimizationApp {
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .show(ctx, |ui| {
-                    ui.set_width(350.0);
+                    ui.set_width(400.0);
+                    ui.spacing_mut().item_spacing.y = 15.0;
 
-                    ui.label("Выберите режим формирования отчета:");
-                    ui.add_space(5.0);
+                    ui.label(egui::RichText::new("Выберите формат отчета:").size(16.0).strong());
 
-                    ui.selectable_value(
-                        &mut self.export_step_interval,
-                        0,
-                        "🎯 Только финальный результат",
-                    );
-                    ui.selectable_value(&mut self.export_step_interval, 1, "🎞 Пошаговый отчет");
-
-                    if self.export_step_interval >= 1 {
-                        ui.separator();
-                        ui.label(egui::RichText::new("Настройки шагов:").strong());
-
-                        egui::Grid::new("export_grid")
-                            .num_columns(2)
-                            .show(ui, |ui| {
-                                ui.label("Начать с:");
-                                ui.add(egui::Slider::new(
-                                    &mut self.export_start_step,
-                                    1..=self.export_end_step,
-                                ));
-                                ui.end_row();
-
-                                ui.label("Закончить на:");
-                                let max_steps =
-                                    self.result.as_ref().map(|r| r.history.len()).unwrap_or(1);
-                                ui.add(egui::Slider::new(
-                                    &mut self.export_end_step,
-                                    self.export_start_step..=max_steps,
-                                ));
-                                ui.end_row();
-
-                                ui.label("Интервал (каждый N-й):");
-                                ui.add(egui::Slider::new(&mut self.export_step_interval, 1..=5));
-                                ui.end_row();
+                    // --- ВАРИАНТ 1: ФИНАЛЬНЫЙ РЕЗУЛЬТАТ ---
+                    ui.group(|ui| {
+                        ui.radio_value(&mut self.export_mode, 0, "🎯 Только финальный результат");
+                        
+                        ui.add_enabled_ui(self.export_mode == 0, |ui| {
+                            ui.indent("final_info", |ui| {
+                                ui.label(egui::RichText::new("В отчет попадет итоговый график, полная таблица всех итераций и текстовое заключение.").weak());
                             });
+                        });
+                    });
 
-                        ui.checkbox(&mut self.export_include_table, "Включить итоговую таблицу");
-                    }
+                    // --- ВАРИАНТ 2: ПОШАГОВЫЙ ОТЧЕТ ---
+                    ui.group(|ui| {
+                        ui.radio_value(&mut self.export_mode, 1, "🎞 Пошаговый отчет");
 
-                    ui.add_space(15.0);
+                        ui.add_enabled_ui(self.export_mode == 1, |ui| {
+                            ui.indent("steps_settings", |ui| {
+                                ui.add_space(5.0);
+                                egui::Grid::new("export_grid")
+                                    .num_columns(2)
+                                    .spacing([10.0, 10.0])
+                                    .show(ui, |ui| {
+                                        ui.label("Начать с шага:");
+                                        ui.add(egui::Slider::new(&mut self.export_start_step, 1..=self.export_end_step));
+                                        ui.end_row();
+
+                                        ui.label("Закончить на:");
+                                        let max_steps = self.result.as_ref().map(|r| r.history.len()).unwrap_or(1);
+                                        ui.add(egui::Slider::new(&mut self.export_end_step, self.export_start_step..=max_steps));
+                                        ui.end_row();
+
+                                        ui.label("Интервал шагов:");
+                                        ui.add(egui::Slider::new(&mut self.export_step_interval, 1..=10).suffix(" шаг"));
+                                        ui.end_row();
+                                    });
+                                
+                                ui.add_space(5.0);
+                                ui.checkbox(&mut self.export_include_table, "Включить итоговую таблицу данных");
+                            });
+                        });
+                    });
+
+                    // --- НИЖНИЕ КНОПКИ ---
+                    ui.separator();
                     ui.horizontal(|ui| {
-                        if ui.button("❌ Отмена").clicked() {
+                        if ui.add_sized([100.0, 30.0], egui::Button::new("❌ Отмена")).clicked() {
                             self.show_export_dialog = false;
                         }
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("✅ Сформировать").clicked() {
-                                self.save_docx_report(); // Вызываем обновленную функцию
+                            let btn_text = if self.export_mode == 0 { "✅ Создать краткий" } else { "✅ Создать пошаговый" };
+                            let proceed_btn = egui::Button::new(egui::RichText::new(btn_text).strong())
+                                .fill(egui::Color32::from_rgb(40, 80, 40));
+
+                            if ui.add_sized([200.0, 30.0], proceed_btn).clicked() {
+                                self.save_docx_report();
                                 self.show_export_dialog = false;
                             }
                         });
