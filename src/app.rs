@@ -10,6 +10,10 @@ use std::io::Write;
 use crate::logic::{self, Func};
 use crate::models::OptimizationResult;
 
+fn lerp(start: f64, end: f64, t: f64) -> f64 {
+    start + (end - start) * t.clamp(0.0, 1.0)
+}
+
 pub struct OptimizationApp {
     // Входные параметры
     a: f64,
@@ -32,6 +36,7 @@ pub struct OptimizationApp {
     current_step: usize,  // Сколько шагов сейчас отображать
     last_step_time: f64,  // Время последнего переключения шага
     animation_speed: f32, // Секунд на один шаг
+    is_smooth_enabled: bool,
 }
 
 impl Default for OptimizationApp {
@@ -51,6 +56,7 @@ impl Default for OptimizationApp {
             is_animating: false,
             current_step: 0,
             last_step_time: 0.0,
+            is_smooth_enabled: true,
         }
     }
 }
@@ -355,24 +361,26 @@ impl OptimizationApp {
 }
 impl eframe::App for OptimizationApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let mut animation_t = 0.0; // Прогресс текущего шага
         ctx.set_pixels_per_point(1.1);
 
         // ЛОГИКА АНИМАЦИИ
         if self.is_animating {
             if let Some(res) = &self.result {
-                let s_elapsed = ctx.input(|i| i.time) - self.last_step_time;
+                let elapsed = ctx.input(|i| i.time) - self.last_step_time;
+                animation_t = (elapsed / self.animation_speed as f64).min(1.0);
 
-                if s_elapsed >= self.animation_speed as f64 {
+                if animation_t >= 1.0 {
                     if self.current_step < res.history.len() {
                         self.current_step += 1;
                         self.last_step_time = ctx.input(|i| i.time);
+                        animation_t = 0.0;
                         self.selected_iteration = Some(self.current_step - 1);
                     } else {
-                        self.is_animating = false; // Закончили
+                        self.is_animating = false;
                     }
                 }
-                // Запрашиваем перерисовку на следующем кадре
-                ctx.request_repaint();
+                ctx.request_repaint(); // Важно для плавности!
             }
         }
 
@@ -467,8 +475,11 @@ impl eframe::App for OptimizationApp {
                 ui.group(|ui| {
                     ui.label(egui::RichText::new("🎬 Анимация").strong());
 
+                    // ГАЛОЧКА ДЛЯ ПЛАВНОСТИ
+                    ui.checkbox(&mut self.is_smooth_enabled, "Плавное перемещение");
+
                     // Настройка скорости
-                    ui.add(egui::Slider::new(&mut self.animation_speed, 0.1..=2.0).text("сек/шаг"));
+                    ui.add(egui::Slider::new(&mut self.animation_speed, 0.1..=3.0).text("сек/шаг"));
 
                     // Кнопки управления
                     ui.horizontal(|ui| {
@@ -669,63 +680,61 @@ impl eframe::App for OptimizationApp {
                 );
 
                 if let Some(res) = &self.result {
-                    // ПРОВЕРЯЕМ: ВЫБРАНА ЛИ КОНКРЕТНАЯ ИТЕРАЦИЯ?
-                    if let Some(idx) = self.selected_iteration {
-                        if let Some(it) = res.history.get(idx) {
-                            // Рисуем границы интервала текущего шага (Оранжевым)
-                            let step_color = egui::Color32::from_rgb(255, 165, 0);
-                            plot_ui.vline(
-                                VLine::new(it.a)
-                                    .color(step_color)
-                                    .name(format!("a_{}", it.k)),
-                            );
-                            plot_ui.vline(
-                                VLine::new(it.b)
-                                    .color(step_color)
-                                    .name(format!("b_{}", it.k)),
-                            );
-
-                            // Рисуем точки lambda и mu этого шага (Штрихованная линия)
-                            plot_ui.vline(
-                                VLine::new(it.lambda)
-                                    .color(step_color.gamma_multiply(0.5))
-                                    .style(egui_plot::LineStyle::Dashed { length: 10.0 })
-                                    .name(format!("λ_{}", it.k)),
-                            );
-
-                            plot_ui.vline(
-                                VLine::new(it.mu)
-                                    .color(step_color.gamma_multiply(0.5))
-                                    .style(egui_plot::LineStyle::Dashed { length: 10.0 })
-                                    .name(format!("μ_{}", it.k)),
-                            );
-
-                            // Ставим точки на графике для визуализации значений функций в λ и μ
-                            plot_ui.points(
-                                Points::new(vec![[it.lambda, it.f_lambda], [it.mu, it.f_mu]])
-                                    .color(step_color)
-                                    .radius(4.0),
-                            );
-                        }
+                    // РЕШАЕМ: использовать реальное время для интерполяции или "заморозить" его
+                    // Если плавность выключена, drawing_t всегда 0.0, и lerp возвращает 'start'
+                    let drawing_t = if self.is_smooth_enabled {
+                        animation_t
                     } else {
-                        // ЕСЛИ НИЧЕГО НЕ ВЫБРАНО - РИСУЕМ ФИНАЛЬНЫЙ РЕЗУЛЬТАТ (как было)
-                        if let Some(last_it) = res.history.last() {
-                            plot_ui.vline(
-                                VLine::new(last_it.a)
-                                    .color(egui::Color32::RED)
-                                    .name("Итог a"),
-                            );
-                            plot_ui.vline(
-                                VLine::new(last_it.b)
-                                    .color(egui::Color32::RED)
-                                    .name("Итог b"),
-                            );
-                        }
+                        0.0
+                    };
+                    // Вычисляем текущие значения границ
+                    let (cur_a, cur_b, cur_lam, cur_mu);
+
+                    if self.current_step == 0 {
+                        // Анимируем от начального интервала к первой итерации
+                        let next = &res.history[0];
+                        cur_a = lerp(self.a, next.a, drawing_t);
+                        cur_b = lerp(self.b, next.b, drawing_t);
+                        cur_lam = lerp(self.a, next.lambda, drawing_t);
+                        cur_mu = lerp(self.b, next.mu, drawing_t);
+                    } else if self.current_step < res.history.len() {
+                        // Анимируем между итерациями k и k+1
+                        let prev = &res.history[self.current_step - 1];
+                        let next = &res.history[self.current_step];
+                        cur_a = lerp(prev.a, next.a, drawing_t);
+                        cur_b = lerp(prev.b, next.b, drawing_t);
+                        cur_lam = lerp(prev.lambda, next.lambda, drawing_t);
+                        cur_mu = lerp(prev.mu, next.mu, drawing_t);
+                    } else {
+                        // Финальное состояние
+                        let last = res.history.last().unwrap();
+                        cur_a = last.a;
+                        cur_b = last.b;
+                        cur_lam = last.lambda;
+                        cur_mu = last.mu;
+                    }
+
+                    // РИСУЕМ ПЛАВНЫЕ ЛИНИИ
+                    let orange = egui::Color32::from_rgb(255, 165, 0);
+                    plot_ui.vline(VLine::new(cur_a).color(orange).width(2.0));
+                    plot_ui.vline(VLine::new(cur_b).color(orange).width(2.0));
+
+                    // Плавные точки lambda/mu
+                    plot_ui.points(
+                        Points::new(vec![
+                            [cur_lam, self.get_f_value(cur_lam)],
+                            [cur_mu, self.get_f_value(cur_mu)],
+                        ])
+                        .color(orange)
+                        .radius(4.0),
+                    );
+
+                    // Когда закончили - рисуем желтую точку
+                    if !self.is_animating && self.current_step == res.history.len() {
                         plot_ui.points(
                             Points::new(vec![[res.x_opt, res.f_opt]])
                                 .color(egui::Color32::YELLOW)
-                                .radius(6.0)
-                                .name("Экстремум"),
+                                .radius(8.0),
                         );
                     }
                 }
