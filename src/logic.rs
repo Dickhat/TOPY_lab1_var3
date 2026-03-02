@@ -172,6 +172,17 @@ pub fn fibonacci_method(
     let mut b = b_init;
     let mut history = Vec::new();
 
+    // 1. Проверка: если интервал уже меньше l, считать не нужно
+    if (b - a) <= l {
+        let x_opt = (a + b) / 2.0;
+        return Ok(OptimizationResult {
+            x_opt,
+            f_opt: f.eval(x_opt),
+            history: vec![],
+            fn_calls: f.calls.get(),
+        });
+    }
+
     let fibs = get_fibonacci_n((b - a) / l);
     let n = fibs.len() - 1; // количество итераций
 
@@ -181,7 +192,7 @@ pub fn fibonacci_method(
     let mut f_lambda = f.eval(lambda);
     let mut f_mu = f.eval(mu);
 
-    for k in 1..n {
+    for k in 1..(n - 1) {
         history.push(Iteration {
             k,
             a,
@@ -199,8 +210,8 @@ pub fn fibonacci_method(
         };
 
         if condition {
-            a = lambda;
             lambda = mu;
+            a = lambda;
             f_lambda = f_mu;
             mu = a + (fibs[n - k - 1] / fibs[n - k]) * (b - a);
             if k < n - 1 {
