@@ -5,6 +5,13 @@ use egui_plot::{Legend, Line, Plot, PlotPoints, Points, VLine};
 
 impl OptimizationApp {
     pub fn render_left_panel(&mut self, ctx: &egui::Context) {
+        // --- ЛОГИКА ВАЛИДАЦИИ ---
+        let is_eps_valid = self.eps > 0.0;
+        let is_l_valid = self.l > 0.0;
+        let is_interval_valid = self.b >= self.a;
+        let is_eps_l_valid = 2.0 * self.eps < self.l && is_eps_valid && is_l_valid;
+        let can_calculate = is_interval_valid && is_eps_l_valid;
+
         egui::SidePanel::left("controls")
             .resizable(true)
             .default_width(280.0)
@@ -83,60 +90,105 @@ impl OptimizationApp {
                                 .num_columns(2)
                                 .spacing([10.0, 8.0])
                                 .show(ui, |ui| {
-                                    ui.label("Начало a:");
+                                    // Валидация интервала [a, b]
+                                    let a_label = if is_interval_valid {
+                                        egui::RichText::new("Начало a:")
+                                    } else {
+                                        egui::RichText::new("Начало a:").color(egui::Color32::RED)
+                                    };
+                                    ui.label(a_label);
                                     if ui
                                         .add(egui::DragValue::new(&mut self.a).speed(0.1))
                                         .changed()
                                     {
                                         self.needs_plot_reset = true;
-                                        self.reset_results(); // Сброс при изменении 'a'
+                                        self.reset_results();
                                     }
                                     ui.end_row();
 
-                                    ui.label("Конец b:");
+                                    let b_label = if is_interval_valid {
+                                        egui::RichText::new("Конец b:")
+                                    } else {
+                                        egui::RichText::new("Конец b:").color(egui::Color32::RED)
+                                    };
+                                    ui.label(b_label);
                                     if ui
                                         .add(egui::DragValue::new(&mut self.b).speed(0.1))
                                         .changed()
                                     {
                                         self.needs_plot_reset = true;
-                                        self.reset_results(); // Сброс при изменении 'b'
+                                        self.reset_results();
                                     }
                                     ui.end_row();
 
-                                    ui.label("Точность ε:");
+                                    // Валидация 2*eps < l
+                                    let eps_label = if is_eps_l_valid {
+                                        egui::RichText::new("Точность ε:")
+                                    } else {
+                                        egui::RichText::new("Точность ε:").color(egui::Color32::RED)
+                                    };
+                                    ui.label(eps_label);
                                     if ui
                                         .add(egui::DragValue::new(&mut self.eps).speed(0.001))
                                         .changed()
                                     {
-                                        self.reset_results(); // Сброс при изменении 'eps'
+                                        self.reset_results();
                                     }
                                     ui.end_row();
 
-                                    ui.label("Длина l:");
+                                    let l_label = if is_eps_l_valid {
+                                        egui::RichText::new("Длина l:")
+                                    } else {
+                                        egui::RichText::new("Длина l:").color(egui::Color32::RED)
+                                    };
+                                    ui.label(l_label);
                                     if ui
                                         .add(egui::DragValue::new(&mut self.l).speed(0.001))
                                         .changed()
                                     {
-                                        self.reset_results(); // Сброс при изменении 'l'
+                                        self.reset_results();
                                     }
                                     ui.end_row();
                                 });
+
+                            // Вывод сообщений об ошибках под полями ввода
+                            if !can_calculate {
+                                ui.add_space(5.0);
+                                if !is_interval_valid {
+                                    ui.colored_label(egui::Color32::RED, "⚠ Ошибка: a > b");
+                                }
+                                if !is_eps_l_valid {
+                                    ui.colored_label(
+                                        egui::Color32::RED,
+                                        "⚠ Ошибка: 2ε должен быть < l \n(и ε, и l должны быть > 0)",
+                                    );
+                                }
+                            }
                         });
 
                         // БЛОК 4: КНОПКА РАСЧЕТА
+                        // КНОПКА РАССЧИТАТЬ (Блокируется при ошибках)
                         ui.vertical_centered(|ui| {
-                            let btn =
-                                egui::Button::new(egui::RichText::new("🚀 Рассчитать").size(16.0))
-                                    .min_size(egui::vec2(160.0, 32.0));
+                            ui.add_enabled_ui(can_calculate, |ui| {
+                                let btn = egui::Button::new(
+                                    egui::RichText::new("🚀 Рассчитать").size(16.0),
+                                )
+                                .min_size(egui::vec2(160.0, 32.0));
 
-                            if ui.add(btn).clicked() {
-                                self.run_optimization();
-                                self.needs_plot_reset = true;
-                                if let Some(res) = &self.result {
-                                    self.current_step = res.history.len();
-                                    self.is_animating = false;
-                                    self.animation_t = 0.0;
+                                if ui.add(btn).clicked() {
+                                    self.run_optimization();
+                                    self.needs_plot_reset = true;
+                                    if let Some(res) = &self.result {
+                                        self.current_step = res.history.len();
+                                        self.is_animating = false;
+                                    }
                                 }
+                            });
+
+                            if !can_calculate {
+                                ui.label(
+                                    egui::RichText::new("Исправьте параметры").weak().size(10.0),
+                                );
                             }
                         });
 
@@ -155,6 +207,7 @@ impl OptimizationApp {
                                     "▶ Старт"
                                 };
                                 if ui.button(play_btn_text).clicked() {
+                                    self.selected_iteration = None;
                                     if self.result.is_none() {
                                         self.run_optimization();
                                     }
