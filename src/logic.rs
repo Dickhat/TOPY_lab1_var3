@@ -109,30 +109,34 @@ pub fn golden_ratio_method(
             f_mu,
         });
 
-        let condition = if is_max {
-            f_lambda < f_mu
+        if is_max {
+            if f_lambda < f_mu {
+                a = lambda;
+                lambda = mu;
+                f_lambda = f_mu;
+                mu = a + alpha * (b - a);
+                f_mu = f.eval(mu);
+            } else {
+                b = mu;
+                mu = lambda;
+                f_mu = f_lambda;
+                lambda = a + (1.0 - alpha) * (b - a);
+                f_lambda = f.eval(lambda);
+            }
         } else {
-            f_lambda > f_mu
-        };
-
-        // ТУТ есть вопросы. ПЕРЕПРОВЕРИТЬ
-        // ->  https://github.com/Dickhat/TOPY_lab1_var3/blob/99535e4d5fde764c46387981f5969624ebb1daa5/src/main.rs#L80
-        // У данича немного по-другому: он не обновляет f_lambda и f_mu в обоих ветках, а только в одной.
-        // Но тогда в следующей итерации будет использоваться устаревшее значение.
-        // Я решил обновлять оба, чтобы не было путаницы, но возможно это не совсем оптимально.
-        // В любом случае, так работает корректно.
-        if condition {
-            a = lambda;
-            lambda = mu;
-            f_lambda = f_mu; // TODO этого у данича нет
-            mu = a + alpha * (b - a);
-            f_mu = f.eval(mu);
-        } else {
-            b = mu;
-            mu = lambda;
-            f_mu = f_lambda;
-            lambda = a + (1.0 - alpha) * (b - a);
-            f_lambda = f.eval(lambda);
+            if f_lambda > f_mu {
+                a = lambda;
+                lambda = mu;
+                f_lambda = f_mu;
+                mu = a + alpha * (b - a);
+                f_mu = f.eval(mu);
+            } else {
+                b = mu;
+                mu = lambda;
+                f_mu = f_lambda;
+                lambda = a + (1.0 - alpha) * (b - a);
+                f_lambda = f.eval(lambda);
+            }
         }
         k += 1;
     }
@@ -192,7 +196,8 @@ pub fn fibonacci_method(
     let mut f_lambda = f.eval(lambda);
     let mut f_mu = f.eval(mu);
 
-    for k in 1..(n - 1) {
+    // Основной цикл до n-2 шага
+    for k in 1..(n - 2) {
         history.push(Iteration {
             k,
             a,
@@ -203,6 +208,7 @@ pub fn fibonacci_method(
             f_mu,
         });
 
+        // Условие выбора интервала MAX/MIN
         let condition = if is_max {
             f_lambda < f_mu
         } else {
@@ -210,21 +216,17 @@ pub fn fibonacci_method(
         };
 
         if condition {
-            lambda = mu;
             a = lambda;
+            lambda = mu;
             f_lambda = f_mu;
             mu = a + (fibs[n - k - 1] / fibs[n - k]) * (b - a);
-            if k < n - 1 {
-                f_mu = f.eval(mu);
-            }
+            f_mu = f.eval(mu);
         } else {
             b = mu;
             mu = lambda;
             f_mu = f_lambda;
             lambda = a + (fibs[n - k - 2] / fibs[n - k]) * (b - a);
-            if k < n - 1 {
-                f_lambda = f.eval(lambda);
-            }
+            f_lambda = f.eval(lambda);
         }
     }
 

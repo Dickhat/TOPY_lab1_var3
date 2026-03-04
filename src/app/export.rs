@@ -16,7 +16,7 @@ impl OptimizationApp {
                 let it = &res.history[idx];
                 (it.a, it.b, it.lambda, it.mu, false)
             }
-            None => {
+            std::prelude::v1::None => {
                 let last = res.history.last().unwrap();
                 (last.a, last.b, last.lambda, last.mu, true)
             }
