@@ -1,6 +1,7 @@
-mod app;
 mod logic;
 mod models;
+mod app;
+mod utils;
 
 use app::OptimizationApp;
 use eframe::egui;
