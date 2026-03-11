@@ -97,6 +97,8 @@ pub fn golden_ratio_method(
 
     let mut f_lambda = f.eval(lambda);
     let mut f_mu = f.eval(mu);
+    
+    let mut last = f_lambda;
 
     while (b - a) > l {
         history.push(Iteration {
@@ -116,12 +118,14 @@ pub fn golden_ratio_method(
                 f_lambda = f_mu;
                 mu = a + alpha * (b - a);
                 f_mu = f.eval(mu);
+                last = f_mu
             } else {
                 b = mu;
                 mu = lambda;
                 f_mu = f_lambda;
                 lambda = a + (1.0 - alpha) * (b - a);
                 f_lambda = f.eval(lambda);
+                last = f_lambda
             }
         } else {
             if f_lambda > f_mu {
@@ -130,12 +134,14 @@ pub fn golden_ratio_method(
                 f_lambda = f_mu;
                 mu = a + alpha * (b - a);
                 f_mu = f.eval(mu);
+                last = f_mu
             } else {
                 b = mu;
                 mu = lambda;
                 f_mu = f_lambda;
                 lambda = a + (1.0 - alpha) * (b - a);
                 f_lambda = f.eval(lambda);
+                last = f_lambda
             }
         }
         k += 1;
@@ -144,7 +150,7 @@ pub fn golden_ratio_method(
     let x_opt = (a + b) / 2.0;
     Ok(OptimizationResult {
         x_opt,
-        f_opt: f.eval(x_opt),
+        f_opt: last,
         history,
         fn_calls: f.calls.get(),
     })
@@ -196,6 +202,8 @@ pub fn fibonacci_method(
     let mut f_lambda = f.eval(lambda);
     let mut f_mu = f.eval(mu);
 
+    let mut last = f_lambda;
+
     // Основной цикл до n-2 шага
     for k in 1..(n - 2) {
         history.push(Iteration {
@@ -221,22 +229,24 @@ pub fn fibonacci_method(
             f_lambda = f_mu;
             mu = a + (fibs[n - k - 1] / fibs[n - k]) * (b - a);
             f_mu = f.eval(mu);
+            last = f_mu
         } else {
             b = mu;
             mu = lambda;
             f_mu = f_lambda;
             lambda = a + (fibs[n - k - 2] / fibs[n - k]) * (b - a);
             f_lambda = f.eval(lambda);
+            last = f_lambda
         }
     }
 
     // Финальный шаг n-1 с использованием eps
     let lambda_n = mu;
     let mu_n = lambda_n + eps;
-    let f_ln = f.eval(lambda_n);
-    let f_mn = f.eval(mu_n);
+    // let f_ln = f.eval(lambda_n);
+    // let f_mn = f.eval(mu_n);
 
-    let condition = if is_max { f_ln < f_mn } else { f_ln > f_mn };
+    let condition = if is_max { f_lambda < f_mu } else { f_lambda > f_mu };
     if condition {
         a = lambda_n;
     } else {
@@ -246,7 +256,7 @@ pub fn fibonacci_method(
     let x_opt = (a + b) / 2.0;
     Ok(OptimizationResult {
         x_opt,
-        f_opt: f.eval(x_opt),
+        f_opt: last,
         history,
         fn_calls: f.calls.get(),
     })
