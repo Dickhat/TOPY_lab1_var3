@@ -151,10 +151,13 @@ impl eframe::App for OptimizationApp {
         // 1. Обработка времени для плавных переходов
         self.handle_animation_logic(ctx);
 
-        // 2. Глобальная настройка масштаба (текст станет крупнее)
+        // 2. Устанавливаем светлую тему (для любой системы)
+        ctx.set_visuals(egui::Visuals::light());
+
+        // 3. Глобальная настройка масштаба (текст станет крупнее)
         ctx.set_pixels_per_point(1.1);
 
-        // 3. Вызов функций отрисовки из ui.rs
+        // 4. Вызов функций отрисовки из ui.rs
         self.render_left_panel(ctx);
         self.render_bottom_panel(ctx);
         self.render_central_panel(ctx);
