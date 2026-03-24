@@ -1,4 +1,4 @@
-use crate::models::{Iteration, OptimizationResult};
+use super::models::{Iteration, OptimizationResult};
 use std::cell::Cell;
 
 // Вспомогательная структура для подсчета вызовов целевой функции
