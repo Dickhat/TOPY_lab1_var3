@@ -1,12 +1,10 @@
 [package]
-name = "TOPY_lab1_var3"
+name = "lab2_decisionMaking"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-plotters = { version = "0.3.5", features = ["bitmap_backend", "image"] }
-eframe = "0.29"
-egui_plot = "0.29"
-rfd = "0.14"
-image = "0.24" 
-docx-rs = "0.4.19"
+eframe = "0.28.1"
+egui_plot = "0.28.1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
