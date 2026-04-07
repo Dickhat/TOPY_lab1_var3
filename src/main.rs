@@ -147,7 +147,8 @@ impl HookeJeevesApp {
             let mut y = xk.clone();
             let mut steps: Vec<ExploratoryStep> = Vec::new();
 
-            // Исследующий поиск
+            // ИССЛЕДУЮЩИЙ ПОИСК (Exploratory Search)
+            // Последовательный перебор координатных направлений
             for j in 0..n {
                 let mut dj = vec![0.0; n];
                 dj[j] = 1.0;
@@ -164,13 +165,33 @@ impl HookeJeevesApp {
                 let mut desc = String::new();
                 if f_plus < fyj {
                     y = y_plus.clone();
-                    desc = "Шаг вперёд успешен: F(y+Δd) < F(y). Точка обновлена.".to_string();
+                    desc = format!(
+                        "ШАГ ВПЕРЁД УСПЕШЕН: F({}) = {:.4} < F({}) = {:.4}. \
+                        Переход к новой точке y+Δd по координате X{}.",
+                        Self::fmt_vec(&y_plus),
+                        f_plus,
+                        Self::fmt_vec(&y),
+                        fyj,
+                        j + 1
+                    );
                 } else if f_minus < fyj {
                     y = y_minus.clone();
-                    desc = "Шаг назад успешен: F(y-Δd) < F(y). Точка обновлена.".to_string();
+                    desc = format!(
+                        "ШАГ НАЗАД УСПЕШЕН: F({}) = {:.4} < F({}) = {:.4}. \
+                        Переход к новой точке y-Δd по координате X{}.",
+                        Self::fmt_vec(&y_minus),
+                        f_minus,
+                        Self::fmt_vec(&y),
+                        fyj,
+                        j + 1
+                    );
                 } else {
-                    desc = "Шаг неуспешен: нет улучшения ни вперёд, ни назад. Точка сохранена."
-                        .to_string();
+                    desc = format!(
+                        "ШАГ НЕУСПЕШЕН: F(y+Δd) = {:.4} ≥ F(y) = {:.4} И \
+                        F(y-Δd) = {:.4} ≥ F(y). \
+                        Ни одно направление не улучшает функцию. Точка сохранена.",
+                        f_plus, fyj, f_minus
+                    );
                 }
 
                 steps.push(ExploratoryStep {
@@ -205,24 +226,57 @@ impl HookeJeevesApp {
                 let mut y_p = cur_y.clone();
                 y_p[idx] += delta;
                 let f_p = self.evaluate_function(&y_p);
+                let y_p_fmt = Self::fmt_vec(&y_p);
                 step.y_plus = Some((y_p.clone(), f_p));
 
                 let mut y_m = cur_y.clone();
                 y_m[idx] -= delta;
                 let f_m = self.evaluate_function(&y_m);
+                let y_m_fmt = Self::fmt_vec(&y_m);
                 step.y_minus = Some((y_m.clone(), f_m));
-
                 if f_p < step.fyj {
                     cur_y = y_p;
-                    step.description =
-                        "Шаг вперёд успешен: F(y+Δd) < F(y). Переход к y+Δd.".to_string();
+                    step.description = format!(
+                        "✓ ШАГ ВПЕРЁД (координата X{}): \
+                        F({}) = {:.4} < F({}) = {:.4}. \
+                        Принята точка y+Δd = {}. \
+                        Улучшение: ΔF = {:.4}",
+                        idx + 1,
+                        y_p_fmt,
+                        f_p,
+                        Self::fmt_vec(&cur_y),
+                        step.fyj,
+                        y_p_fmt,
+                        step.fyj - f_p
+                    );
                 } else if f_m < step.fyj {
                     cur_y = y_m;
-                    step.description =
-                        "Шаг назад успешен: F(y-Δd) < F(y). Переход к y-Δd.".to_string();
+                    step.description = format!(
+                        "✓ ШАГ НАЗАД (координата X{}): \
+                        F({}) = {:.4} < F({}) = {:.4}. \
+                        Принята точка y-Δd = {}. \
+                        Улучшение: ΔF = {:.4}",
+                        idx + 1,
+                        y_m_fmt,
+                        f_m,
+                        Self::fmt_vec(&cur_y),
+                        step.fyj,
+                        y_m_fmt,
+                        step.fyj - f_m
+                    );
                 } else {
-                    step.description =
-                        "Шаг неуспешен: F(y±Δd) ≥ F(y). Точка не меняется.".to_string();
+                    step.description = format!(
+                        "✗ ШАГ НЕУСПЕШЕН (координата X{}): \
+                        F(y+Δd) = {:.4} ≥ F(y) = {:.4} И \
+                        F(y-Δd) = {:.4} ≥ F(y). \
+                        Точка не меняется: y = {}. \
+                        Локальный экстремум по данной координате.",
+                        idx + 1,
+                        f_p,
+                        step.fyj,
+                        f_m,
+                        Self::fmt_vec(&cur_y)
+                    );
                 }
             }
 
@@ -231,7 +285,7 @@ impl HookeJeevesApp {
             let mut pattern_info = None;
 
             if fy_next < fxk {
-                // Ускоряющий шаг
+                // ИССЛЕДУЮЩИЙ ПОИСК УСПЕШЕН - пробуем УСКОРЯЮЩИЙ ШАГ (Pattern Move)
                 let dir: Vec<f64> = cur_y.iter().zip(xk.iter()).map(|(&a, &b)| a - b).collect();
                 let mut x_new = cur_y
                     .iter()
@@ -241,23 +295,61 @@ impl HookeJeevesApp {
                 let f_new = self.evaluate_function(&x_new);
 
                 if f_new < fy_next {
-                    x = x_new;
                     pattern_info = Some(PatternInfo {
                         success: true,
-                        description: "Ускоряющий шаг успешен: F(x_new) < F(y). Применяем x_new."
-                            .to_string(),
+                        description: format!(
+                            "🚀 УСКОРЯЮЩИЙ ШАГ УСПЕШЕН (Pattern Move): \
+                            Направление d = y - x^k = {} - {} = {}. \
+                            x_new = y + α·d = {} + {}·{} = {}. \
+                            F(x_new) = {:.4} < F(y) = {:.4}. \
+                            Применяем x_new как новую базисную точку. \
+                            Ускорение в перспективном направлении!",
+                            Self::fmt_vec(&cur_y),
+                            Self::fmt_vec(&xk),
+                            Self::fmt_vec(&dir),
+                            Self::fmt_vec(&cur_y),
+                            self.alpha,
+                            Self::fmt_vec(&dir),
+                            Self::fmt_vec(&x_new),
+                            f_new,
+                            fy_next
+                        ),
                     });
+                    x = x_new;
                 } else {
+                    pattern_info = Some(PatternInfo {
+                        success: false,
+                        description: format!(
+                            "⚠ УСКОРЯЮЩИЙ ШАГ НЕ УЛУЧШИЛ: \
+                            F(x_new) = {:.4} ≥ F(y) = {:.4}. \
+                            x_new = {}, y = {}. \
+                            Принимаем точку исследующего поиска y как новую базисную точку. \
+                            Движение вдоль направления d неэффективно.",
+                            f_new,
+                            fy_next,
+                            Self::fmt_vec(&x_new),
+                            Self::fmt_vec(&cur_y)
+                        ),
+                    });
                     x = cur_y;
-                    pattern_info = Some(PatternInfo { success: false, description: "Ускоряющий шаг не улучшил: F(x_new) ≥ F(y). Принимаем точку исследующего поиска y.".to_string() });
                 }
             } else {
+                // ИССЛЕДУЮЩИЙ ПОИСК НЕ УДАЛСЯ - уменьшаем шаг
                 delta /= 2.0;
-                x = cur_y; // или оставляем xk, по учебнику обычно возвращаемся к базе
+                x = cur_y;
                 pattern_info = Some(PatternInfo {
                     success: false,
-                    description: "Исследующий поиск не дал улучшения. Шаг Δ уменьшен вдвое."
-                        .to_string(),
+                    description: format!(
+                        "❌ ИССЛЕДУЮЩИЙ ПОИСК НЕ ДАЛ УЛУЧШЕНИЯ: \
+                        F(y) = {:.4} ≥ F(x^k) = {:.4}. \
+                        Ни по одной координате нет улучшения. \
+                        Уменьшаем шаг поиска: Δ = {:.4} → Δ/2 = {:.4}. \
+                        Возвращаемся к базисной точке для более детального поиска.",
+                        fy_next,
+                        fxk,
+                        self.iterations.last().map_or(delta, |i| i.delta),
+                        delta
+                    ),
                 });
             }
 
@@ -279,7 +371,7 @@ impl HookeJeevesApp {
                         "".to_string()
                     },
                     delta: if i == 0 {
-                        format!("{:.2}", self.iterations.last().unwrap().delta)
+                        format!("{:.4}", self.iterations.last().unwrap().delta)
                     } else {
                         "".to_string()
                     },
@@ -289,13 +381,13 @@ impl HookeJeevesApp {
                         "".to_string()
                     },
                     fxk: if i == 0 {
-                        format!("{:.2}", fxk)
+                        format!("{:.4}", fxk)
                     } else {
                         "".to_string()
                     },
                     j: step.j.to_string(),
                     yj: Self::fmt_vec(&step.yj),
-                    fyj: format!("{:.2}", step.fyj),
+                    fyj: format!("{:.4}", step.fyj),
                     dj: Self::fmt_vec(&step.dj),
                     y_plus: step
                         .y_plus
@@ -305,7 +397,7 @@ impl HookeJeevesApp {
                     f_plus: step
                         .y_plus
                         .as_ref()
-                        .map(|(_, v)| format!("{:.2}", v))
+                        .map(|(_, v)| format!("{:.4}", v))
                         .unwrap_or("-".to_string()),
                     y_minus: step
                         .y_minus
@@ -315,7 +407,7 @@ impl HookeJeevesApp {
                     f_minus: step
                         .y_minus
                         .as_ref()
-                        .map(|(_, v)| format!("{:.2}", v))
+                        .map(|(_, v)| format!("{:.4}", v))
                         .unwrap_or("-".to_string()),
                     description: step.description.clone(),
                 });
@@ -352,7 +444,10 @@ impl HookeJeevesApp {
         }
         self.total_iterations = iter_count;
         self.computation_done = true;
-        self.status_message = "Оптимизация успешно завершена!".to_string();
+        self.status_message = format!(
+            "✅ Оптимизация завершена! Найдено решение: F(X*) = {:.6} за {} итераций",
+            self.optimal_value, self.total_iterations
+        );
     }
 
     fn generate_level_lines_data(&self) -> (Vec<PlotPoints>, Vec<[f64; 2]>) {
@@ -388,10 +483,8 @@ impl HookeJeevesApp {
     }
 }
 
-
 impl eframe::App for HookeJeevesApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-
         egui::SidePanel::left("settings_panel")
             .resizable(true)
             .default_width(350.0)
@@ -585,48 +678,47 @@ impl eframe::App for HookeJeevesApp {
 
                 // 2. ТАБЛИЦА — В ScrollArea с ограниченной высотой
                 ui.heading("Таблица итераций");
-                egui::ScrollArea::vertical()
-                    .show(ui, |ui| {
-                        egui::ScrollArea::horizontal().show(ui, |ui| {
-                            egui::Grid::new("iter_table")
-                                .num_columns(13)
-                                .spacing([6.0, 4.0])
-                                .striped(true)
-                                .show(ui, |ui| {
-                                    ui.label("K");
-                                    ui.label("Δ");
-                                    ui.label("Xk");
-                                    ui.label("F(Xk)");
-                                    ui.label("J");
-                                    ui.label("Yj");
-                                    ui.label("F(Yj)");
-                                    ui.label("di");
-                                    ui.label("Yj+Δdj");
-                                    ui.label("F(Yj+Δdj)");
-                                    ui.label("Yj-Δdj");
-                                    ui.label("F(Yj-Δdj)");
-                                    ui.label("Описание");
-                                    ui.end_row();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    egui::ScrollArea::horizontal().show(ui, |ui| {
+                        egui::Grid::new("iter_table")
+                            .num_columns(13)
+                            .spacing([6.0, 4.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                                ui.label("K");
+                                ui.label("Δ");
+                                ui.label("Xk");
+                                ui.label("F(Xk)");
+                                ui.label("J");
+                                ui.label("Yj");
+                                ui.label("F(Yj)");
+                                ui.label("di");
+                                ui.label("Yj+Δdj");
+                                ui.label("F(Yj+Δdj)");
+                                ui.label("Yj-Δdj");
+                                ui.label("F(Yj-Δdj)");
+                                ui.label("Описание");
+                                ui.end_row();
 
-                                    for row in &self.table_rows {
-                                        ui.label(&row.k);
-                                        ui.label(&row.delta);
-                                        ui.label(&row.xk);
-                                        ui.label(&row.fxk);
-                                        ui.label(&row.j);
-                                        ui.label(&row.yj);
-                                        ui.label(&row.fyj);
-                                        ui.label(&row.dj);
-                                        ui.label(&row.y_plus);
-                                        ui.label(&row.f_plus);
-                                        ui.label(&row.y_minus);
-                                        ui.label(&row.f_minus);
-                                        ui.label(&row.description);
-                                        ui.end_row();
-                                    }
-                                });
-                        });
+                                for row in &self.table_rows {
+                                    ui.label(&row.k);
+                                    ui.label(&row.delta);
+                                    ui.label(&row.xk);
+                                    ui.label(&row.fxk);
+                                    ui.label(&row.j);
+                                    ui.label(&row.yj);
+                                    ui.label(&row.fyj);
+                                    ui.label(&row.dj);
+                                    ui.label(&row.y_plus);
+                                    ui.label(&row.f_plus);
+                                    ui.label(&row.y_minus);
+                                    ui.label(&row.f_minus);
+                                    ui.label(&row.description);
+                                    ui.end_row();
+                                }
+                            });
                     });
+                });
             } else {
                 // Экран до запуска оптимизации
                 ui.vertical_centered_justified(|ui| {
