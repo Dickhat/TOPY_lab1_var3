@@ -1,6 +1,7 @@
 // src/main.rs
 use eframe::egui;
-use plotters::prelude::*;
+use egui_plot::{Line, Plot, PlotPoints, Points};
+use std::f64::consts::PI;
 
 // Structure to store iteration data
 #[derive(Clone, Debug)]
@@ -43,8 +44,8 @@ struct HookeJeevesApp {
     optimal_value: f64,
     total_iterations: usize,
     computation_done: bool,
-    show_iterations: bool,
     status_message: String,
+    show_plot: bool,
 }
 
 impl HookeJeevesApp {
@@ -61,8 +62,8 @@ impl HookeJeevesApp {
             optimal_value: 0.0,
             total_iterations: 0,
             computation_done: false,
-            show_iterations: false,
             status_message: String::new(),
+            show_plot: true,
         }
     }
 
@@ -213,74 +214,57 @@ impl HookeJeevesApp {
         self.status_message = "Optimization completed successfully!".to_string();
     }
 
-    fn plot_level_lines(&self) -> Option<Vec<u8>> {
-        if self.function_choice != 0 { return None; }
+    fn generate_level_lines_data(&self) -> (Vec<PlotPoints>, Vec<[f64; 2]>) {
+        let mut level_lines = Vec::new();
+        let mut path_points = Vec::new();
+
+        if self.function_choice != 0 {
+            return (level_lines, path_points);
+        }
+
+        // Generate optimization path
+        for iter in &self.iterations {
+            if iter.point.len() >= 2 {
+                path_points.push([iter.point[0], iter.point[1]]);
+            }
+        }
+
+        // Generate level lines for F1
+        let levels = vec![8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 25.0, 30.0];
         
-        let root = BitMapBackend::new("level_lines.png", (800, 600)).into_drawing_area();
-        root.fill(&WHITE).ok()?;
-
-        let mut chart = ChartBuilder::on(&root)
-            .caption("Level Lines of F₁(x) with Optimization Path", ("sans-serif", 20))
-            .margin(5)
-            .x_label_area_size(40)
-            .y_label_area_size(40)
-            .build_cartesian_2d(-2.0f32..6.0f32, -2.0f32..6.0f32)
-            .ok()?;
-
-        chart.configure_mesh().draw().ok()?;
-
-        for level in (0..=20).step_by(2) {
-            let level_val = level as f64;
+        for level in levels {
             let mut points = Vec::new();
-            for i in 0..200 {
-                for j in 0..200 {
-                    let x = -2.0 + i as f64 * 0.04;
-                    let y = -2.0 + j as f64 * 0.04;
-                    let val = Self::f1(&[x, y]);
-                    if (val - level_val).abs() < 0.5 {
-                        points.push((x as f32, y as f32));
-                    }
+            
+            // Use parametric approach for ellipses
+            // F1 = (x1-3)^2 + (x2-2)^2 + 5
+            // So level lines are circles centered at (3, 2)
+            let radius_sq = level - 5.0;
+            if radius_sq > 0.0 {
+                let radius = (radius_sq as f64).sqrt();
+                for i in 0..=100 {
+                    let angle = (i as f64) / 100.0 * 2.0 * PI;
+                    let x = 3.0 + radius * angle.cos();
+                    let y = 2.0 + radius * angle.sin();
+                    points.push([x, y]);
                 }
-            }
-            if !points.is_empty() {
-                chart.draw_series(points.iter().map(|&(x, y)| Circle::new((x, y), 1, BLUE.filled()))).ok()?;
+                level_lines.push(PlotPoints::from(points));
             }
         }
 
-        if !self.iterations.is_empty() {
-            let path_points: Vec<(f32, f32)> = self.iterations.iter()
-                .filter_map(|iter| {
-                    if iter.point.len() >= 2 {
-                        Some((iter.point[0] as f32, iter.point[1] as f32))
-                    } else { None }
-                })
-                .collect();
-
-            if path_points.len() > 1 {
-                chart.draw_series(LineSeries::new(path_points.clone(), &RED)).ok()?;
-                for (i, &(x, y)) in path_points.iter().enumerate() {
-                    chart.draw_series(std::iter::once(Circle::new((x, y), 4, RED.filled()))).ok()?;
-                    if i < path_points.len() - 1 {
-                        let (x2, y2) = path_points[i + 1];
-                        chart.draw_series(std::iter::once(PathElement::new(vec![(x, y), (x2, y2)], &GREEN))).ok()?;
-                    }
-                }
-            }
-        }
-
-        root.present().ok()?;
-        std::fs::read("level_lines.png").ok()
+        (level_lines, path_points)
     }
 
     fn run_multiple_accuracies(&mut self) {
         let accuracies = [0.1, 0.01, 0.001];
         let mut results = String::new();
+        
         for &eps in &accuracies {
             self.epsilon = eps;
             self.optimize();
             results.push_str(&format!("ε={}: Optimal={:.6}, Value={:.6}, Iterations={}\n",
                 eps, self.optimal_point[0], self.optimal_value, self.total_iterations));
         }
+        
         self.status_message = format!("Multiple accuracy test completed:\n{}", results);
     }
 
@@ -310,6 +294,7 @@ impl HookeJeevesApp {
         } else {
             self.initial_point_3d = [original_point[0], original_point[1], original_point[2]];
         }
+        
         self.status_message = format!("Multiple initial points test completed:\n{}", results);
     }
 }
@@ -326,6 +311,17 @@ impl eframe::App for HookeJeevesApp {
                         output.push_str(&format!("Optimal Point: {:?}\n", self.optimal_point));
                         output.push_str(&format!("Optimal Value: {}\n", self.optimal_value));
                         output.push_str(&format!("Total Iterations: {}\n", self.total_iterations));
+                        
+                        // Add iteration details
+                        output.push_str("\nIterations:\n");
+                        output.push_str("Iter | Delta | Point | F(Point)\n");
+                        for iter in &self.iterations {
+                            output.push_str(&format!(
+                                "{} | {:.4} | {:?} | {:.6}\n",
+                                iter.iteration, iter.delta, iter.point, iter.function_value
+                            ));
+                        }
+                        
                         std::fs::write("optimization_results.txt", output).ok();
                         self.status_message = "Results saved to optimization_results.txt".to_string();
                     }
@@ -363,19 +359,30 @@ impl eframe::App for HookeJeevesApp {
                 ui.label("Accuracy (ε):");
                 ui.add(egui::DragValue::new(&mut self.epsilon).speed(0.001));
             });
+            
             ui.horizontal(|ui| {
                 ui.label("Initial Step (Δ):");
                 ui.add(egui::DragValue::new(&mut self.initial_delta).speed(0.1));
             });
+            
             ui.horizontal(|ui| {
                 ui.label("Acceleration (α):");
                 ui.add(egui::DragValue::new(&mut self.alpha).speed(0.1));
             });
             
             ui.separator();
-            if ui.button("Run Optimization").clicked() { self.optimize(); }
-            if ui.button("Test Different ε Values").clicked() { self.run_multiple_accuracies(); }
-            if ui.button("Test Different Initial Points").clicked() { self.run_multiple_initial_points(); }
+            
+            if ui.button("Run Optimization").clicked() {
+                self.optimize();
+            }
+            
+            if ui.button("Test Different ε Values").clicked() {
+                self.run_multiple_accuracies();
+            }
+            
+            if ui.button("Test Different Initial Points").clicked() {
+                self.run_multiple_initial_points();
+            }
             
             ui.separator();
             if !self.status_message.is_empty() {
@@ -387,52 +394,191 @@ impl eframe::App for HookeJeevesApp {
             if self.computation_done {
                 ui.heading("Optimization Results");
                 ui.separator();
+                
                 ui.label(format!("Function: F{}", self.function_choice + 1));
                 ui.label(format!("Optimal Point: {:?}", self.optimal_point));
                 ui.label(format!("Optimal Value: {:.6}", self.optimal_value));
                 ui.label(format!("Total Iterations: {}", self.total_iterations));
                 
                 ui.separator();
-                if ui.checkbox(&mut self.show_iterations, "Show Detailed Iterations").changed() {}
                 
-                if self.show_iterations {
-                    ui.separator();
-                    ui.heading("Iteration Details");
+                // Show iterations in a table
+                ui.heading("Iteration Details (Table View)");
+                ui.separator();
+                
+                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                    egui::Grid::new("iterations_table")
+                        .num_columns(7)
+                        .spacing([5.0, 2.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            // Header
+                            ui.label("Iter");
+                            ui.label("Delta");
+                            ui.label("X₁");
+                            ui.label("X₂");
+                            if self.function_choice == 1 {
+                                ui.label("X₃");
+                            }
+                            ui.label("F(X)");
+                            ui.label("Pattern Move");
+                            ui.end_row();
+                            
+                            // Data rows
+                            for iter in &self.iterations {
+                                ui.label(format!("{}", iter.iteration));
+                                ui.label(format!("{:.4}", iter.delta));
+                                if iter.point.len() > 0 {
+                                    ui.label(format!("{:.4}", iter.point[0]));
+                                } else {
+                                    ui.label("-");
+                                }
+                                if iter.point.len() > 1 {
+                                    ui.label(format!("{:.4}", iter.point[1]));
+                                } else {
+                                    ui.label("-");
+                                }
+                                if self.function_choice == 1 && iter.point.len() > 2 {
+                                    ui.label(format!("{:.4}", iter.point[2]));
+                                }
+                                ui.label(format!("{:.6}", iter.function_value));
+                                
+                                if iter.pattern_move.is_some() {
+                                    ui.label("Yes");
+                                } else {
+                                    ui.label("No");
+                                }
+                                ui.end_row();
+                            }
+                        });
+                });
+                
+                ui.separator();
+                
+                // Show interactive plot for F1
+                if self.function_choice == 0 {
+                    if ui.checkbox(&mut self.show_plot, "Show Interactive Plot").changed() {
+                        // Toggle plot visibility
+                    }
+                    
+                    if self.show_plot {
+                        let (level_lines, path_points) = self.generate_level_lines_data();
+                        
+                        ui.heading("Level Lines and Optimization Path");
+                        
+                        Plot::new("optimization_plot")
+                            .view_aspect(1.0)
+                            .width(500.0)
+                            .height(400.0)
+                            .show_axes([true, true])
+                            .show_grid(true)
+                            .label_formatter(|name, value| {
+                                if name.is_empty() {
+                                    format!("x: {:.2}\ny: {:.2}", value.x, value.y)
+                                } else {
+                                    format!("{}: x={:.2}, y={:.2}", name, value.x, value.y)
+                                }
+                            })
+                            .show(ui, |plot_ui| {
+                                // Draw level lines
+                                for (i, line_points) in level_lines.into_iter().enumerate() {
+                                    let line = Line::new(line_points)
+                                        .color(egui::Color32::from_rgb(100, 100, 200))
+                                        .width(1.0)
+                                        .name(format!("Level {}", i));
+                                    plot_ui.line(line);
+                                }
+                                
+                                // Draw optimization path
+                                if path_points.len() > 1 {
+                                    let path_line = Line::new(
+                                        PlotPoints::from(path_points.clone())
+                                    )
+                                    .color(egui::Color32::RED)
+                                    .width(2.0)
+                                    .name("Optimization Path");
+                                    plot_ui.line(path_line);
+                                    
+                                    // Draw points
+                                    let points: PlotPoints = path_points.iter()
+                                        .map(|p| [p[0], p[1]])
+                                        .collect();
+                                    let points_plot = Points::new(points)
+                                        .color(egui::Color32::RED)
+                                        .radius(3.0)
+                                        .name("Iterations");
+                                    plot_ui.points(points_plot);
+                                }
+                                
+                                // Draw start and end points
+                                if !path_points.is_empty() {
+                                    let start = vec![[path_points[0][0], path_points[0][1]]];
+                                    let end = vec![[
+                                        path_points[path_points.len()-1][0],
+                                        path_points[path_points.len()-1][1]
+                                    ]];
+                                    
+                                    plot_ui.points(
+                                        Points::new(PlotPoints::from(start))
+                                            .color(egui::Color32::GREEN)
+                                            .radius(5.0)
+                                            .name("Start")
+                                    );
+                                    plot_ui.points(
+                                        Points::new(PlotPoints::from(end))
+                                            .color(egui::Color32::BLUE)
+                                            .radius(5.0)
+                                            .name("End")
+                                    );
+                                }
+                            });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label("🟢 Start point");
+                            ui.label("🔵 End point");
+                            ui.label("🔴 Optimization path");
+                            ui.label("🔵 Level lines");
+                        });
+                    }
+                }
+                
+                // Detailed exploratory steps in expandable section
+                ui.separator();
+                ui.collapsing("Detailed Exploratory Steps", |ui| {
                     egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
                         for iter in &self.iterations {
-                            ui.collapsing(format!("Iteration {}", iter.iteration), |ui| {
-                                ui.label(format!("Delta: {:.4}", iter.delta));
+                            ui.collapsing(format!("Iteration {} (Δ={:.4})", iter.iteration, iter.delta), |ui| {
                                 ui.label(format!("Point: {:?}", iter.point));
-                                ui.label(format!("Function Value: {:.6}", iter.function_value));
+                                ui.label(format!("F(X) = {:.6}", iter.function_value));
+                                
                                 if !iter.exploratory_steps.is_empty() {
                                     ui.label("Exploratory Steps:");
                                     for step in &iter.exploratory_steps {
-                                        ui.indent("step", |ui| {
-                                            ui.label(format!("Variable j={}: direction={:?}, y={:?}", 
-                                                step.variable_index, step.direction, step.y_point));
+                                        ui.indent(format!("step_{}", step.variable_index), |ui| {
+                                            ui.label(format!(
+                                                "Variable j={}: y={:?}, F(y)={:.4}",
+                                                step.variable_index, step.y_point, step.y_value
+                                            ));
                                             if let Some((point, val)) = &step.y_plus_delta {
-                                                ui.label(format!("  y+Δd: point={:?}, f={:.4}", point, val));
+                                                ui.label(format!("  y+Δd: F={:.4}", val));
                                             }
                                             if let Some((point, val)) = &step.y_minus_delta {
-                                                ui.label(format!("  y-Δd: point={:?}, f={:.4}", point, val));
+                                                ui.label(format!("  y-Δd: F={:.4}", val));
                                             }
                                         });
                                     }
                                 }
+                                
                                 if let Some(pm) = &iter.pattern_move {
-                                    ui.label(format!("Pattern Move: direction={:?}, new_point={:?}, f={:.4}", 
-                                        pm.direction, pm.new_point, pm.new_value));
+                                    ui.label(format!(
+                                        "Pattern Move: new_point={:?}, F={:.4}",
+                                        pm.new_point, pm.new_value
+                                    ));
                                 }
                             });
                         }
                     });
-                }
-                
-                if self.function_choice == 0 && ui.button("Generate Level Lines Plot").clicked() {
-                    if self.plot_level_lines().is_some() {
-                        self.status_message = "Plot saved as level_lines.png".to_string();
-                    }
-                }
+                });
             } else {
                 ui.heading("Hooke-Jeeves Optimization with Discrete Step");
                 ui.separator();
@@ -450,7 +596,7 @@ impl eframe::App for HookeJeevesApp {
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1400.0, 900.0]),
         ..Default::default()
     };
     
