@@ -388,26 +388,9 @@ impl HookeJeevesApp {
     }
 }
 
-// ... (весь код до impl eframe::App остаётся без изменений)
 
 impl eframe::App for HookeJeevesApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
-                ui.menu_button("Файл", |ui| {
-                    if ui.button("Сохранить результаты").clicked() {
-                        let mut output = String::new();
-                        output.push_str("Результаты оптимизации методом Хука-Дживса\n\n");
-                        output.push_str(&format!("Функция: F{}\n", self.function_choice + 1));
-                        output.push_str(&format!("Оптимальная точка: {:?}\n", self.optimal_point));
-                        output.push_str(&format!("Оптимальное значение: {}\n", self.optimal_value));
-                        output.push_str(&format!("Всего итераций: {}\n", self.total_iterations));
-                        std::fs::write("результаты.txt", output).ok();
-                        self.status_message = "Результаты сохранены в файл результаты.txt".to_string();
-                    }
-                });
-            });
-        });
 
         egui::SidePanel::left("settings_panel")
             .resizable(true)
@@ -417,8 +400,16 @@ impl eframe::App for HookeJeevesApp {
                 ui.separator();
 
                 ui.label("Выберите функцию:");
-                ui.radio_value(&mut self.function_choice, 0, "F₁(x) = -6X₁ - 4X₂ + X₁² + X₂² + 18");
-                ui.radio_value(&mut self.function_choice, 1, "F₂(x) = 4X₁² + 3X₂² + X₃² + 4X₁X₂ - 2X₂X₃ - 16X₁ - 4X₃");
+                ui.radio_value(
+                    &mut self.function_choice,
+                    0,
+                    "F₁(x) = -6X₁ - 4X₂ + X₁² + X₂² + 18",
+                );
+                ui.radio_value(
+                    &mut self.function_choice,
+                    1,
+                    "F₂(x) = 4X₁² + 3X₂² + X₃² + 4X₁X₂ - 2X₂X₃ - 16X₁ - 4X₃",
+                );
 
                 ui.separator();
                 ui.label("Параметры:");
@@ -463,31 +454,59 @@ impl eframe::App for HookeJeevesApp {
 
                 // ФИНАЛЬНЫЙ РЕЗУЛЬТАТ — в конце левой панели, показывается только после оптимизации
                 if self.computation_done {
-                    ui.separator();
-                    ui.heading(egui::RichText::new("🎯 Результат").strong());
-
+                    // Блок с результатами: дефолтный фон, жирный текст, без цветной заливки
                     egui::Frame::group(ui.style())
-                        .inner_margin(egui::Margin::same(10.0))
-                        .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 100, 200)))
+                        .inner_margin(egui::Margin::same(12.0))
+                        .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(0, 100, 200)))
                         .show(ui, |ui| {
-                            ui.vertical(|ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.label(
+                                    egui::RichText::new("✅ Оптимизация завершена успешно!")
+                                        .size(16.0)
+                                        .strong(),
+                                );
+                                ui.separator();
+
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new("Функция:").strong());
-                                    ui.label(format!("F{}", self.function_choice + 1));
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "F{}",
+                                            self.function_choice + 1
+                                        ))
+                                        .strong(),
+                                    );
                                 });
-                                ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("Оптимальная точка:").strong());
-                                    ui.label(egui::RichText::new(format!("{:?}", self.optimal_point))
-                                        .monospace());
+
+                                // Оптимальная точка — построчно
+                                ui.label(egui::RichText::new("Оптимальная точка:").strong());
+                                ui.indent("optimal_point", |ui| {
+                                    for (i, &val) in self.optimal_point.iter().enumerate() {
+                                        ui.label(
+                                            egui::RichText::new(format!("X{} = {:.4}", i + 1, val))
+                                                .monospace()
+                                                .strong(),
+                                        );
+                                    }
                                 });
+
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new("Оптимальное значение:").strong());
-                                    ui.label(egui::RichText::new(format!("{:.6}", self.optimal_value))
-                                        .color(egui::Color32::from_rgb(0, 128, 0)));
+                                    ui.label(
+                                        egui::RichText::new(format!("{:.6}", self.optimal_value))
+                                            .size(16.0)
+                                            .color(egui::Color32::from_rgb(0, 128, 0))
+                                            .strong(),
+                                    );
                                 });
+
                                 ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("Итераций:").strong());
-                                    ui.label(format!("{}", self.total_iterations));
+                                    ui.label(egui::RichText::new("Количество итераций:").strong());
+                                    ui.label(
+                                        egui::RichText::new(format!("{}", self.total_iterations))
+                                            .size(14.0)
+                                            .strong(),
+                                    );
                                 });
                             });
                         });
@@ -551,10 +570,12 @@ impl eframe::App for HookeJeevesApp {
                                         .name("Старт"),
                                 );
                                 plot_ui.points(
-                                    Points::new(PlotPoints::from(vec![path_points[path_points.len() - 1]]))
-                                        .color(egui::Color32::BLUE)
-                                        .radius(5.0)
-                                        .name("Финиш"),
+                                    Points::new(PlotPoints::from(vec![
+                                        path_points[path_points.len() - 1],
+                                    ]))
+                                    .color(egui::Color32::BLUE)
+                                    .radius(5.0)
+                                    .name("Финиш"),
                                 );
                             }
                         });
@@ -565,12 +586,11 @@ impl eframe::App for HookeJeevesApp {
                 // 2. ТАБЛИЦА — В ScrollArea с ограниченной высотой
                 ui.heading("Таблица итераций");
                 egui::ScrollArea::vertical()
-                    .max_height(400.0)
                     .show(ui, |ui| {
                         egui::ScrollArea::horizontal().show(ui, |ui| {
                             egui::Grid::new("iter_table")
                                 .num_columns(13)
-                                .spacing([4.0, 2.0])
+                                .spacing([6.0, 4.0])
                                 .striped(true)
                                 .show(ui, |ui| {
                                     ui.label("K");
@@ -607,14 +627,15 @@ impl eframe::App for HookeJeevesApp {
                                 });
                         });
                     });
-
             } else {
                 // Экран до запуска оптимизации
                 ui.vertical_centered_justified(|ui| {
                     ui.add_space(50.0);
                     ui.heading("Оптимизация методом Хука-Дживса с дискретным шагом");
                     ui.separator();
-                    ui.label("Настройте параметры в левой панели и нажмите «Запустить оптимизацию».");
+                    ui.label(
+                        "Настройте параметры в левой панели и нажмите «Запустить оптимизацию».",
+                    );
                     ui.label("");
                     ui.label("Алгоритм выполняет:");
                     ui.label("1. Исследующий поиск по координатным направлениям");
