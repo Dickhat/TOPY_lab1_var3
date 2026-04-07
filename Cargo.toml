@@ -1,4 +1,3 @@
-# Cargo.toml
 [package]
 name = "hooke_jeeves_optimizer"
 version = "0.1.0"
@@ -8,6 +7,3 @@ edition = "2021"
 eframe = "0.24"
 egui = "0.24"
 egui_plot = "0.24"
-nalgebra = "0.32"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
