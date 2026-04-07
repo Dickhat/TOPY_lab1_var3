@@ -166,7 +166,7 @@ impl HookeJeevesApp {
 
                 steps.push(ExploratoryStep {
                     j: j + 1,
-                    yj: if j == 0 { xk.clone() } else { steps.last().unwrap().yj.clone() }, // упрощённо, реально y обновляется
+                    yj: if j == 0 { xk.clone() } else { steps.last().unwrap().yj.clone() },
                     fyj: if j == 0 { fxk } else { steps.last().map(|s| s.fyj).unwrap_or(fxk) },
                     dj,
                     y_plus: Some((y_plus.clone(), f_plus)),
@@ -392,64 +392,16 @@ impl eframe::App for HookeJeevesApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.computation_done {
-                ui.heading("Результаты оптимизации");
-                ui.separator();
-                ui.label(format!("Функция: F{}", self.function_choice + 1));
-                ui.label(format!("Оптимальная точка: {:?}", self.optimal_point));
-                ui.label(format!("Оптимальное значение: {:.6}", self.optimal_value));
-                ui.label(format!("Итераций: {}", self.total_iterations));
-                
-                ui.separator();
-                ui.heading("Таблица итераций");
-                
-                egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
-                    egui::Grid::new("iter_table")
-                        .num_columns(13)
-                        .spacing([4.0, 2.0])
-                        .striped(true)
-                        .show(ui, |ui| {
-                            // Заголовки
-                            ui.label("K");
-                            ui.label("Δ");
-                            ui.label("Xk");
-                            ui.label("F(Xk)");
-                            ui.label("J");
-                            ui.label("Yj");
-                            ui.label("F(Yj)");
-                            ui.label("di");
-                            ui.label("Yj+Δdj");
-                            ui.label("F(...)");
-                            ui.label("Yj-Δdj");
-                            ui.label("F(...)");
-                            ui.label("Описание");
-                            ui.end_row();
-
-                            for row in &self.table_rows {
-                                ui.label(&row.k);
-                                ui.label(&row.delta);
-                                ui.label(&row.xk);
-                                ui.label(&row.fxk);
-                                ui.label(&row.j);
-                                ui.label(&row.yj);
-                                ui.label(&row.fyj);
-                                ui.label(&row.dj);
-                                ui.label(&row.y_plus);
-                                ui.label(&row.f_plus);
-                                ui.label(&row.y_minus);
-                                ui.label(&row.f_minus);
-                                ui.label(&row.description);
-                                ui.end_row();
-                            }
-                        });
-                });
-
-                ui.separator();
-                if self.function_choice == 0 {
-                    ui.checkbox(&mut self.show_plot, "Показать интерактивный график");
-                    if self.show_plot {
+                // Вертикальная прокручиваемая область
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.heading("Результаты оптимизации");
+                    ui.separator();
+                    
+                    // График (всегда показывается для F1)
+                    if self.function_choice == 0 {
+                        ui.heading("Линии уровня и траектория поиска");
                         let (level_lines, path_points) = self.generate_level_lines_data();
                         
-                        ui.heading("Линии уровня и траектория поиска");
                         Plot::new("optimization_plot")
                             .view_aspect(1.0)
                             .width(500.0)
@@ -504,8 +456,92 @@ impl eframe::App for HookeJeevesApp {
                                     );
                                 }
                             });
+                        
+                        ui.separator();
                     }
-                }
+                    
+                    // Таблица итераций
+                    ui.heading("Таблица итераций");
+                    egui::ScrollArea::horizontal().show(ui, |ui| {
+                        egui::Grid::new("iter_table")
+                            .num_columns(13)
+                            .spacing([4.0, 2.0])
+                            .striped(true)
+                            .show(ui, |ui| {
+                                // Заголовки
+                                ui.label("K");
+                                ui.label("Δ");
+                                ui.label("Xk");
+                                ui.label("F(Xk)");
+                                ui.label("J");
+                                ui.label("Yj");
+                                ui.label("F(Yj)");
+                                ui.label("di");
+                                ui.label("Yj+Δdj");
+                                ui.label("F(Yj+Δdj)");
+                                ui.label("Yj-Δdj");
+                                ui.label("F(Yj-Δdj)");
+                                ui.label("Описание");
+                                ui.end_row();
+
+                                for row in &self.table_rows {
+                                    ui.label(&row.k);
+                                    ui.label(&row.delta);
+                                    ui.label(&row.xk);
+                                    ui.label(&row.fxk);
+                                    ui.label(&row.j);
+                                    ui.label(&row.yj);
+                                    ui.label(&row.fyj);
+                                    ui.label(&row.dj);
+                                    ui.label(&row.y_plus);
+                                    ui.label(&row.f_plus);
+                                    ui.label(&row.y_minus);
+                                    ui.label(&row.f_minus);
+                                    ui.label(&row.description);
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                    
+                    ui.separator();
+                    
+                    // Финальный результат (выделенный блок)
+                    ui.heading("🎯 ФИНАЛЬНЫЙ РЕЗУЛЬТАТ ОПТИМИЗАЦИИ");
+                    
+                    // Выделяем блок с результатами
+                    egui::Frame::group(ui.style())
+                        .fill(egui::Color32::from_rgb(230, 240, 255))
+                        .inner_margin(egui::Margin::same(15.0))
+                        .stroke(egui::Stroke::new(2.0, egui::Color32::from_rgb(0, 100, 200)))
+                        .show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                ui.label(egui::RichText::new("✅ Оптимизация завершена успешно!").size(16.0).strong());
+                                ui.separator();
+                                
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Функция:").strong());
+                                    ui.label(format!("F{}", self.function_choice + 1));
+                                });
+                                
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Оптимальная точка:").strong());
+                                    ui.label(egui::RichText::new(format!("{:?}", self.optimal_point)).size(14.0).monospace());
+                                });
+                                
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Оптимальное значение:").strong());
+                                    ui.label(egui::RichText::new(format!("{:.6}", self.optimal_value)).size(16.0).color(egui::Color32::from_rgb(0, 128, 0)));
+                                });
+                                
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Количество итераций:").strong());
+                                    ui.label(egui::RichText::new(format!("{}", self.total_iterations)).size(14.0));
+                                });
+                            });
+                        });
+                    
+                    ui.separator();
+                });
             } else {
                 ui.heading("Оптимизация методом Хука-Дживса с дискретным шагом");
                 ui.separator();
