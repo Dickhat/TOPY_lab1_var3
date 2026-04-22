@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -87,6 +88,57 @@ def coordinate_descent(x_start, mu, eps_inner):
     return x, df_history
 
 # =====================================================================
+# ВИЗУАЛИЗАЦИЯ
+# =====================================================================
+
+def plot_optimization_process(trajectory, final_point):
+    trajectory = np.array(trajectory)
+    
+    # Определяем границы графика
+    x_min, x_max = -2, 10
+    y_min, y_max = -5, 15
+    
+    x_range = np.linspace(x_min, x_max, 400)
+    y_range = np.linspace(y_min, y_max, 400)
+    X, Y = np.meshgrid(x_range, y_range)
+    Z = (X - 6)**2 + (Y + 8)**2
+    
+    plt.figure(figsize=(10, 8))
+    
+    # 1. Линии уровня функции
+    levels = np.logspace(1, 3, 20)
+    cp = plt.contour(X, Y, Z, levels=levels, colors='blue', alpha=0.3)
+    plt.clabel(cp, inline=True, fontsize=8)
+    
+    # 2. Ограничение g(x) <= 0  => x1^2 - x2 <= 0 => x2 >= x1^2
+    G = X**2 - Y
+    plt.contour(X, Y, G, levels=[0], colors='red', linewidths=2)
+    plt.fill_between(x_range, x_range**2, y_max, color='red', alpha=0.1, label='Допустимая область g(x)<=0')
+
+    # 3. Траектория движения
+    plt.plot(trajectory[:, 0], trajectory[:, 1], 'go-', markersize=5, label='Траектория (внешние итерации)')
+    
+    # Стрелки направления
+    for i in range(len(trajectory)-1):
+        plt.annotate('', xy=trajectory[i+1], xytext=trajectory[i],
+                     arrowprops=dict(arrowstyle="->", color="black", lw=1))
+
+    # Точки
+    plt.scatter(trajectory[0,0], trajectory[0,1], c='black', s=100, label='Старт $X_0$', zorder=5)
+    plt.scatter(final_point[0], final_point[1], c='gold', marker='*', s=200, label='Оптимум $X^*$', edgecolors='black', zorder=6)
+
+    plt.title('Визуализация метода барьерных функций (Вариант 3)')
+    plt.xlabel('$x_1$')
+    plt.ylabel('$x_2$')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.xlim(x_min, x_max)
+    plt.ylim(y_min, y_max)
+    
+    plt.savefig('optimization_plot.png')
+    plt.show()
+
+# =====================================================================
 # ФОРМИРОВАНИЕ ОТЧЕТА DOCX
 # =====================================================================
 
@@ -149,6 +201,7 @@ def solve_barrier_method(x_init, mu_init, beta, epsilon):
     mu = mu_init
     k = 1
     
+    trajectory = [x_k.copy()]
     all_iterations_for_report = []
     params = {'x_init': x_init, 'mu_init': mu_init, 'beta': beta, 'epsilon': epsilon}
 
@@ -172,6 +225,7 @@ def solve_barrier_method(x_init, mu_init, beta, epsilon):
             'table': table,
             'check': val_kBx
         })
+        trajectory.append(x_next.copy())
 
         if val_kBx < epsilon:
             print(f"Критерий выполнен на итерации {k}!")
@@ -201,6 +255,9 @@ def solve_barrier_method(x_init, mu_init, beta, epsilon):
     print(f"f(X*) = {final_results['f_val']:.6f}")
     print(f"g(X*) = {final_results['g_val']:.6f}")
     print("="*50)
+
+    # Рисуем график
+    plot_optimization_process(trajectory, x_k)
 
     # Генерация документа
     generate_docx(all_iterations_for_report, final_results, params)
