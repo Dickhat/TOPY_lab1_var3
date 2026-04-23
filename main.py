@@ -5,6 +5,12 @@ from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+# Стратегии
+a = 1
+b = 2
+c = 3
+d = 4
+
 # =====================================================================
 # БЛОК ВВОДА ДАННЫХ ДЛЯ ВАРИАНТА 3
 # =====================================================================
@@ -100,8 +106,8 @@ def plot_optimization_process(trajectory, final_point):
     trajectory = np.array(trajectory)
     
     # Определяем границы графика
-    x_min, x_max = -2, 10
-    y_min, y_max = -5, 15
+    x_min, x_max = -5, 3
+    y_min, y_max = -15, 10
     
     x_range = np.linspace(x_min, x_max, 400)
     y_range = np.linspace(y_min, y_max, 400)
@@ -199,7 +205,7 @@ def generate_docx(all_data, summary_df, final_results, params):
 # ОСНОВНОЙ ЦИКЛ
 # =====================================================================
 
-def solve_barrier_method(x_init, mu_init, beta, epsilon):
+def solve_barrier_method(x_init, mu_init, beta, epsilon, strategy):
     x_k = np.array(x_init, dtype=float)
     mu = mu_init
     k = 1
@@ -225,14 +231,16 @@ def solve_barrier_method(x_init, mu_init, beta, epsilon):
         summary_data.append({
             "k": k,
             "mu_k": mu,
-            "X_k": f"({x_next[0]:.4f}; {x_next[1]:.4f})",
-            "f(X_k)": f"{f_val:.4f}",
-            "mu*B(X_k)": f"{mu_Bx:.4f}"
+            "X_k": f"({x_k[0]:.5f}; {x_k[1]:.5f})",
+            "f(X_k)": f"{f_val:.5f}",
+            "B": f"{barrier_term(x_next):.5f}",
+            "Teta": f"{(f_val + mu_Bx):.5f}",
+            "mu*B(X_k)": f"{mu_Bx:.5f}"
         })
 
         # Шаг 2: Проверка критерия остановки
         val_kBx = -mu / g(x_next)
-        print(f"\nПроверка критерия: mu*B(x) = {val_kBx:.4f} (нужно < {epsilon})")
+        print(f"\nПроверка критерия: mu*B(x) = {val_kBx:.5f} (нужно < {epsilon})")
         
         # Сохраняем данные для отчета
         all_iterations_for_report.append({'k': k, 'mu': mu, 'table': table, 'check': mu_Bx})
@@ -240,22 +248,34 @@ def solve_barrier_method(x_init, mu_init, beta, epsilon):
 
         # Вывод в терминал
         print(f"\n--- Итерация {k} ---")
-        print(f"X_{k} = {x_next}, f(X_{k}) = {f_val:.4f}, mu*B = {mu_Bx:.4f}")
+        print(f"X_{k} = {x_k}, f(X_{k}) = {f_val:.5f}, B = {barrier_term(x_next):.5f}, Teta = {(f_val + mu_Bx):.5f}, mu*B = {mu_Bx:.5f}")
 
         if mu_Bx < epsilon:
             x_k = x_next
             break
         
         x_k = x_next
-        mu *= beta
+
+        if strategy == a:
+            mu = 0.01
+            #mu *= 0.001
+        elif strategy == b:
+            mu = 0.01
+        elif strategy == c:
+            mu *= 0.1
+        elif strategy == d:
+            mu = 0.001
+        else:
+            mu *= beta
         k += 1
-        if k > 20: break
+        #if k > 20: break
 
     summary_df = pd.DataFrame(summary_data)
     
     # Печать финальной таблицы в терминал
     print("\nФИНАЛЬНАЯ ТАБЛИЦА РЕЗУЛЬТАТОВ:")
     print(summary_df.to_string(index=False))
+    print(f"X_k = {x_k}")
 
     final_results = {'x_star': np.round(x_k, 4), 'f_val': f(x_k), 'g_val': g(x_k)}
     params = {'x_init': x_init, 'mu_init': mu_init, 'beta': beta, 'epsilon': epsilon}
@@ -266,4 +286,4 @@ def solve_barrier_method(x_init, mu_init, beta, epsilon):
     generate_docx(all_iterations_for_report, summary_df, final_results, params)
 
 if __name__ == "__main__":
-    solve_barrier_method(x_init=[0.0, 12.0], mu_init=10.0, beta=0.1, epsilon=0.5)
+    solve_barrier_method(x_init=[0, -1], mu_init=10, beta=0.1, epsilon=0.5, strategy=a)
