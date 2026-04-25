@@ -206,6 +206,18 @@ def generate_docx(all_data, summary_df, final_results, params):
 # =====================================================================
 
 def solve_barrier_method(x_init, mu_init, beta, epsilon, strategy):
+    print(f"\n{'='*50}")
+    print(f"СТРАТЕГИЯ: {strategy}")
+    print(f"{'='*50}")
+
+    # --- КРИТИЧЕСКАЯ ПРОВЕРКА НАХОЖДЕНИЯ ВНУТРИ ОБЛАСТИ ---
+    g_start = g(x_init)
+    if g_start >= 0:
+        print(f"ОШИБКА: Начальная точка {x_init} находится ВНЕ допустимой области!")
+        print(f"g(x) = {g_start:.4f} (должно быть < 0)")
+        return None, None
+    
+
     x_k = np.array(x_init, dtype=float)
     mu = mu_init
     k = 1
@@ -286,4 +298,4 @@ def solve_barrier_method(x_init, mu_init, beta, epsilon, strategy):
     generate_docx(all_iterations_for_report, summary_df, final_results, params)
 
 if __name__ == "__main__":
-    solve_barrier_method(x_init=[0, -1], mu_init=10, beta=0.1, epsilon=0.5, strategy=a)
+    solve_barrier_method(x_init=[-1, 2], mu_init=10, beta=0.1, epsilon=0.5, strategy=a)
